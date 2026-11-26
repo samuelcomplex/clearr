@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Everything Clearr and the Clearr Jellyfin plugin share: the decision logic, the Sonarr/Radarr/Jellyfin
+    clients, the cleanup engine, the JSON stores and the web UI (ui/, embedded).
+    net8.0 so it loads in Jellyfin 10.11 (.NET 9) and 12 (.NET 10) as well as in the Clearr app.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Clearr</RootNamespace>
+    <Version>0.2.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <EmbeddedResource Include="ui\*" LogicalName="ClearrUi.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

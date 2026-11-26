@@ -7,6 +7,7 @@ using Clearr.Core;
 using Clearr.Storage;
 using Clearr.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
+using Clearr.Clients;
 
 var fails = 0;
 void Expect(bool ok, string what)
@@ -133,10 +134,11 @@ settings.Save(new ClearrSettings
 });
 
 var factory = new SimpleFactory();
-var svc = new ClearrService(factory, settings, keep, history, NullLogger<ClearrService>.Instance);
+var source = new JellyfinApiSource(factory, settings.Get);
+var svc = new ClearrEngine(factory, settings.Get, source, keep, history, NullLogger.Instance);
 
 // ---------------------------------------------------------------- report
-var (_, report, _, _) = await svc.BuildAsync(settings.Get(), default);
+var (_, report, _, _) = await svc.BuildAsync(default);
 Console.WriteLine("  shows: " + string.Join(", ", report.Shows.Select(x => x.Name)) + " | movies: " + string.Join(", ", report.Movies.Select(x => x.Name)));
 ShowReport S(string n) => report.Shows.Single(x => x.Name == n);
 MovieReport M(string n) => report.Movies.Single(x => x.Name == n);
@@ -174,12 +176,12 @@ Expect(refused.Error != null && refused.Error.Contains("DryRun") && w.Log.Count 
 // ---------------------------------------------------------------- keep
 var msg = await svc.SetKeepAsync(running.Id, "show", true, default);
 Expect(msg.Contains("Sonarr") && w.SonarrSeries[2]["tags"]!.AsArray().Any(t => w.SonarrTags[t!.GetValue<int>()] == "keep"), "Keep show: stored and tagged 'keep' in Sonarr");
-(_, report, _, _) = await svc.BuildAsync(settings.Get(), default);
+(_, report, _, _) = await svc.BuildAsync(default);
 Expect(S("Running Show").Kept && !S("Running Show").Seasons[0].Eligible, "Kept show: its seasons are no longer eligible");
 await svc.SetKeepAsync(running.Id, "show", false, default);
 Expect(w.SonarrSeries[2]["tags"]!.AsArray().Count == 0, "Un-keep show: Sonarr tag removed");
 await svc.SetKeepAsync(done.Seasons[1].Id, "season", true, default);
-(_, report, _, _) = await svc.BuildAsync(settings.Get(), default);
+(_, report, _, _) = await svc.BuildAsync(default);
 Expect(!S("Done Show").Eligible && S("Done Show").Seasons[0].Eligible && !S("Done Show").Seasons[1].Eligible, "Kept season: blocks whole-show removal, other season still eligible");
 await svc.SetKeepAsync(done.Seasons[1].Id, "season", false, default);
 
@@ -211,6 +213,28 @@ Expect(w.RadarrMovies[2]["movieFile"] != null && w.RadarrMovies[4]["movieFile"] 
 var log = string.Join(",", w.Log);
 Expect(w.Log.IndexOf("PUT movie 1") < w.Log.IndexOf("DELETE moviefile 1001"), "Run 2: unmonitor happens before delete");
 Expect(history.GetAll().Count(h => h.Action == "Deleted") == 3, "History: 3 deletions recorded");
+
+// ---------------------------------------------------------------- plugin fallback: delete through Jellyfin
+var fakeDeleter = new FakeDeleter();
+var direct = new ClearrEngine(factory, settings.Get, source, keep, history, NullLogger.Instance, fakeDeleter);
+(_, report, _, _) = await direct.BuildAsync(default);
+Expect(!S("Unmanaged Show").Eligible && S("Unmanaged Show").Via == null, "Fallback available but off (default): unmanaged show still not removable");
+st = settings.Get();
+st.AllowDirectDelete = true;
+settings.Save(st);
+(_, report, _, _) = await direct.BuildAsync(default);
+Expect(S("Unmanaged Show").Eligible && S("Unmanaged Show").Via == "Jellyfin" && report.DirectDelete, "Fallback on: unmanaged show eligible via Jellyfin");
+Expect(S("Ended Show").Via == "Sonarr", "Managed shows still go through Sonarr");
+(_, report, _, _) = await svc.BuildAsync(default);
+Expect(!S("Unmanaged Show").Eligible, "App (no deleter) ignores the fallback setting");
+var drd = await direct.CleanupAsync(true, false, default);
+var dItem = drd.Actions.SingleOrDefault(a => a.Title == "Unmanaged Show");
+Expect(dItem?.Action == "WouldDelete" && dItem.Detail.Contains("through Jellyfin") && dItem.Bytes == 123 && fakeDeleter.Deleted.Count == 0, "Fallback dry run: listed with the deleter's size, nothing deleted");
+var drr = await direct.CleanupAsync(false, true, default);
+Expect(drr.Actions.Single(a => a.Title == "Unmanaged Show").Action == "Deleted" && fakeDeleter.Deleted.SequenceEqual(new[] { "Show:" + unmanaged.Id }), "Fallback delete: whole unmanaged show removed through the deleter");
+st = settings.Get();
+st.AllowDirectDelete = false;
+settings.Save(st);
 
 // ---------------------------------------------------------------- web app: auth + guard over HTTP
 var appDir = Path.Combine(tmp, "app");
@@ -307,6 +331,19 @@ await fake.StopAsync();
 Console.WriteLine(fails == 0 ? "\nALL PASSED" : $"\n{fails} FAILED");
 try { Directory.Delete(tmp, true); } catch { }
 return fails == 0 ? 0 : 1;
+
+internal class FakeDeleter : IDirectDeleter
+{
+    public List<string> Deleted { get; } = new();
+
+    public long Measure(DirectTarget t) => 123;
+
+    public string Delete(DirectTarget t)
+    {
+        Deleted.Add($"{t.Kind}:{t.ItemId}");
+        return "deleted through Jellyfin";
+    }
+}
 
 internal class SimpleFactory : IHttpClientFactory
 {

@@ -7,12 +7,12 @@ namespace Clearr.Api;
 /// <summary>Runs the cleanup once a day at the configured local time (container TZ).</summary>
 public class Scheduler : BackgroundService
 {
-    private readonly ClearrService _clearr;
+    private readonly ClearrEngine _clearr;
     private readonly SettingsStore _settings;
     private readonly ILogger<Scheduler> _log;
     private DateOnly _lastRun;
 
-    public Scheduler(ClearrService clearr, SettingsStore settings, ILogger<Scheduler> log)
+    public Scheduler(ClearrEngine clearr, SettingsStore settings, ILogger<Scheduler> log)
     {
         _clearr = clearr;
         _settings = settings;

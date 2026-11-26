@@ -1,0 +1,93 @@
+/* Clearr UI components — scoped under .clearr so they can live inside the Jellyfin dashboard too. */
+.clearr {
+    --cl-panel: #262626;
+    --cl-panel-2: #2d2d2d;
+    --cl-border: #3a3a3a;
+    --cl-text: #e1e2e3;
+    --cl-muted: #9a9a9a;
+    --cl-accent: #2bc4a5;
+    --cl-accent-dark: #1e9c83;
+    --cl-orange: #ff9800;
+    --cl-red: #e5484d;
+    color: var(--cl-text);
+    font-size: 14px;
+    line-height: 1.45;
+}
+.clearr * { box-sizing: border-box; }
+.clearr a { color: var(--cl-accent); text-decoration: none; }
+.clearr .cl-hidden { display: none !important; }
+.clearr .cl-muted { color: var(--cl-muted); }
+.clearr .cl-small { font-size: 12px; }
+.clearr .cl-error { color: var(--cl-red); }
+.clearr .cl-ok { color: #6fd18a; }
+.clearr h1 { font-size: 22px; font-weight: 600; margin: 0 0 16px; }
+.clearr h2 { font-size: 16px; margin: 30px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--cl-border); }
+.clearr h3 { font-size: 14px; margin: 0 0 10px; }
+
+/* controls */
+.clearr .cl-btn { background: var(--cl-panel-2); color: var(--cl-text); border: 1px solid var(--cl-border); border-radius: 4px; padding: 7px 14px; font: inherit; cursor: pointer; }
+.clearr .cl-btn:hover { border-color: #555; }
+.clearr .cl-btn.cl-primary { background: var(--cl-accent); border-color: var(--cl-accent); color: #062019; font-weight: 600; }
+.clearr .cl-btn.cl-primary:hover { background: var(--cl-accent-dark); }
+.clearr .cl-btn.cl-danger { background: var(--cl-red); border-color: var(--cl-red); color: #fff; font-weight: 600; }
+.clearr .cl-btn.cl-small { padding: 4px 10px; font-size: 12px; }
+.clearr .cl-btn:disabled { opacity: .5; cursor: default; }
+.clearr input, .clearr select { background: #1a1a1a; color: var(--cl-text); border: 1px solid var(--cl-border); border-radius: 4px; padding: 7px 9px; font: inherit; }
+.clearr input:focus, .clearr select:focus { outline: none; border-color: var(--cl-accent); }
+.clearr input[type=checkbox] { width: auto; padding: 0; accent-color: var(--cl-accent); }
+
+.clearr .cl-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.clearr .cl-toolbar input[type=search] { min-width: 200px; }
+.clearr .cl-note { color: var(--cl-muted); margin: 0 0 10px; }
+.clearr .cl-mode { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; margin-right: 4px; }
+.clearr .cl-mode-Off { background: #444; color: #ddd; }
+.clearr .cl-mode-DryRun { background: #3b3b10; color: #e6d86a; }
+.clearr .cl-mode-Delete { background: #4a1517; color: #ff8a8d; }
+.clearr .cl-banner { background: #12352d; border: 1px solid var(--cl-accent-dark); padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; }
+.clearr .cl-warn { background: #3a2a0c; border: 1px solid #7a5a1a; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; }
+.clearr .cl-result { background: var(--cl-panel); border: 1px solid var(--cl-border); border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; }
+.clearr .cl-result ul { margin: 8px 0 4px; padding-left: 20px; }
+.clearr .cl-summary { margin: 8px 0 12px; }
+
+/* cards */
+.clearr .cl-card { background: var(--cl-panel); border: 1px solid var(--cl-border); border-radius: 6px; margin-bottom: 6px; }
+.clearr .cl-card-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; flex-wrap: wrap; }
+.clearr .cl-card-head:hover { background: #2a2a2a; }
+.clearr .cl-name { font-weight: 600; flex: 1 1 220px; }
+.clearr .cl-sub { color: var(--cl-muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.clearr .cl-card-body { display: none; padding: 0 14px 12px; }
+.clearr .cl-card.cl-open .cl-card-body { display: block; }
+.clearr .cl-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.clearr .cl-chip { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid transparent; white-space: nowrap; }
+.clearr .cl-st-Finished { background: rgba(76,175,80,.18); border-color: rgba(76,175,80,.6); }
+.clearr .cl-st-InProgress { background: rgba(33,150,243,.16); border-color: rgba(33,150,243,.55); }
+.clearr .cl-st-NotStarted { opacity: .5; border-color: var(--cl-border); }
+.clearr .cl-flagged { background: rgba(255,152,0,.2) !important; border-color: rgba(255,152,0,.7) !important; }
+.clearr .cl-pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; white-space: nowrap; }
+.clearr .cl-pill-ready { background: var(--cl-red); color: #fff; }
+.clearr .cl-pill-partial { background: var(--cl-orange); color: #241500; }
+.clearr .cl-pill-unmanaged { background: #444; color: #ccc; font-weight: 600; }
+.clearr .cl-keep { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 10px; border: 1px solid #555; background: transparent; color: var(--cl-text); cursor: pointer; white-space: nowrap; }
+.clearr .cl-keep:hover { border-color: var(--cl-accent); }
+.clearr .cl-keep.cl-on { background: var(--cl-accent); border-color: var(--cl-accent); color: #062019; font-weight: 700; }
+.clearr .cl-reason { color: var(--cl-muted); font-size: 12px; }
+.clearr .cl-reason.cl-ok { color: #6fd18a; }
+.clearr .cl-table { width: 100%; border-collapse: collapse; }
+.clearr .cl-table th, .clearr .cl-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #333; vertical-align: top; }
+.clearr .cl-table th { color: var(--cl-muted); font-weight: 600; font-size: 12px; }
+.clearr .cl-a-Deleted { color: #6fd18a; }
+.clearr .cl-a-Failed { color: var(--cl-red); }
+.clearr .cl-a-Skipped { color: var(--cl-muted); }
+
+/* settings */
+.clearr .cl-settings { max-width: 720px; }
+.clearr .cl-settings label { display: block; margin-bottom: 14px; }
+.clearr .cl-settings label > input:not([type=checkbox]), .clearr .cl-settings label > select { display: block; width: 100%; margin-top: 4px; }
+.clearr .cl-settings label.cl-check { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.clearr .cl-hint { display: block; color: var(--cl-muted); font-size: 12px; margin-top: 4px; }
+.clearr .cl-conn { background: var(--cl-panel); border: 1px solid var(--cl-border); border-radius: 6px; padding: 14px; margin-bottom: 10px; }
+.clearr .cl-opt { font-size: 11px; font-weight: 400; color: var(--cl-muted); margin-left: 6px; }
+.clearr .cl-test-result { margin-left: 10px; font-size: 12px; }
+.clearr .cl-users label { margin-bottom: 6px; }
+.clearr .cl-save-row { position: sticky; bottom: 0; background: var(--cl-bg, #1f1f1f); padding: 14px 0; border-top: 1px solid var(--cl-border); margin-top: 20px; display: flex; gap: 12px; align-items: center; }
+.clearr[data-host=plugin] .cl-save-row { position: static; background: transparent; }

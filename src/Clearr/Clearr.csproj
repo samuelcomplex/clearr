@@ -4,8 +4,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Clearr</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Clearr.Core/Clearr.Core.csproj" />
+  </ItemGroup>
 </Project>

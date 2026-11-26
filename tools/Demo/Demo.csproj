@@ -8,6 +8,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../src/Clearr/Clearr.csproj" />
+    <ProjectReference Include="../../src/Clearr.Core/Clearr.Core.csproj" />
     <Compile Include="../../tests/Clearr.Tests/FakeServers.cs" Link="FakeServers.cs" />
   </ItemGroup>
 </Project>

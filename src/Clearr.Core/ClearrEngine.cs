@@ -1,26 +1,70 @@
 using Clearr.Clients;
-using Clearr.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace Clearr.Core;
 
-/// <summary>Builds reports from Jellyfin + Sonarr/Radarr and carries out (or previews) cleanups.</summary>
-public class ClearrService
+/// <summary>Where the library and everyone's watch state come from (Jellyfin's API in the app, Jellyfin's internals in the plugin).</summary>
+public interface ILibrarySource
+{
+    Task<LibrarySnapshot> LoadAsync(CancellationToken ct);
+
+    /// <summary>Ask Jellyfin to rescan after files were removed.</summary>
+    Task RefreshAsync(CancellationToken ct);
+}
+
+/// <summary>What a direct (Jellyfin) removal targets: a whole show, one season, or a movie.</summary>
+public record DirectTarget(string Kind, string ItemId, string? SeasonId, int? SeasonNumber);
+
+/// <summary>Plugin only: removes items Sonarr/Radarr don't manage straight through Jellyfin.</summary>
+public interface IDirectDeleter
+{
+    long Measure(DirectTarget target);
+
+    /// <summary>Returns a short description of what was removed.</summary>
+    string Delete(DirectTarget target);
+}
+
+public interface IKeepStore
+{
+    bool Contains(string id);
+
+    void Set(string id, bool keep);
+}
+
+public interface IHistoryStore
+{
+    List<HistoryEntry> GetAll();
+
+    void Add(IEnumerable<HistoryEntry> entries);
+}
+
+/// <summary>
+/// Builds reports from the library + Sonarr/Radarr and carries out (or previews) cleanups.
+/// Shared by the Clearr app and the Clearr Jellyfin plugin.
+/// </summary>
+public class ClearrEngine
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly IHttpClientFactory _http;
-    private readonly SettingsStore _settings;
-    private readonly KeepStore _keep;
-    private readonly HistoryStore _history;
-    private readonly ILogger<ClearrService> _log;
+    private readonly Func<ClearrSettings> _settings;
+    private readonly ILibrarySource _source;
+    private readonly IKeepStore _keep;
+    private readonly IHistoryStore _history;
+    private readonly ILogger _log;
+    private readonly IDirectDeleter? _direct;
 
-    public ClearrService(IHttpClientFactory http, SettingsStore settings, KeepStore keep, HistoryStore history, ILogger<ClearrService> log)
+    public ClearrEngine(IHttpClientFactory http, Func<ClearrSettings> settings, ILibrarySource source, IKeepStore keep, IHistoryStore history, ILogger log, IDirectDeleter? direct = null)
     {
         _http = http;
         _settings = settings;
+        _source = source;
         _keep = keep;
         _history = history;
         _log = log;
+        _direct = direct;
     }
+
+    public List<HistoryEntry> History() => _history.GetAll();
 
     private HttpClient Http()
     {
@@ -31,14 +75,12 @@ public class ClearrService
 
     // ---------------------------------------------------------------- report
 
-    public async Task<(LibrarySnapshot Lib, WatchReport Report, Dictionary<string, ArrItem> Sonarr, Dictionary<string, RadarrMovie> Radarr)> BuildAsync(ClearrSettings s, CancellationToken ct)
-    {
-        if (!s.Jellyfin.IsConfigured)
-        {
-            throw new ApiException("Jellyfin isn't set up yet. Add its URL and API key in Settings.");
-        }
+    public record Built(LibrarySnapshot Lib, WatchReport Report, Dictionary<string, ArrItem> Sonarr, Dictionary<string, RadarrMovie> Radarr);
 
-        var lib = await new JellyfinClient(Http(), s.Jellyfin).LoadAsync(ct);
+    public async Task<Built> BuildAsync(CancellationToken ct)
+    {
+        var s = _settings();
+        var lib = await _source.LoadAsync(ct);
         var keepTag = (s.KeepTag ?? "").Trim();
         var sonarr = new Dictionary<string, ArrItem>();
         var radarr = new Dictionary<string, RadarrMovie>();
@@ -82,8 +124,8 @@ public class ClearrService
             }
         }
 
-        var report = Analyzer.Build(lib, s, _keep.Contains, DateTime.UtcNow);
-        return (lib, report, sonarr, radarr);
+        var report = Analyzer.Build(lib, s, _keep.Contains, DateTime.UtcNow, _direct != null);
+        return new Built(lib, report, sonarr, radarr);
     }
 
     private static T? Match<T>(Dictionary<string, string> providerIds, Dictionary<string, T> index, params string[] providers)
@@ -105,7 +147,7 @@ public class ClearrService
     public async Task<string> SetKeepAsync(string id, string kind, bool keep, CancellationToken ct)
     {
         _keep.Set(id, keep);
-        var s = _settings.Get();
+        var s = _settings();
         var tag = (s.KeepTag ?? "").Trim();
         if (tag.Length == 0 || kind == "season")
         {
@@ -115,14 +157,14 @@ public class ClearrService
         // Mirror show/movie keeps as a tag in Sonarr/Radarr, the *arr way.
         try
         {
-            var (_, report, _, _) = await BuildAsync(s, ct);
-            if (kind == "show" && report.Shows.FirstOrDefault(x => x.ShowId == id) is { ArrId: int sid } && s.Sonarr.IsConfigured)
+            var built = await BuildAsync(ct);
+            if (kind == "show" && built.Report.Shows.FirstOrDefault(x => x.ShowId == id) is { ArrId: int sid } && s.Sonarr.IsConfigured)
             {
                 await new SonarrClient(Http(), s.Sonarr).SetTagAsync(sid, tag, keep, ct);
                 return keep ? "Kept (also tagged in Sonarr)" : "Removed keep (and the Sonarr tag)";
             }
 
-            if (kind == "movie" && report.Movies.FirstOrDefault(x => x.MovieId == id) is { ArrId: int mid } && s.Radarr.IsConfigured)
+            if (kind == "movie" && built.Report.Movies.FirstOrDefault(x => x.MovieId == id) is { ArrId: int mid } && s.Radarr.IsConfigured)
             {
                 await new RadarrClient(Http(), s.Radarr).SetTagAsync(mid, tag, keep, ct);
                 return keep ? "Kept (also tagged in Radarr)" : "Removed keep (and the Radarr tag)";
@@ -139,44 +181,57 @@ public class ClearrService
 
     // ---------------------------------------------------------------- cleanup
 
-    private record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, string Reason, int ArrId, ShowInfo? Show, RadarrMovie? Movie);
+    private record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, string Reason, int? ArrId, ShowInfo? Show, RadarrMovie? Movie, DirectTarget? Direct);
 
     public async Task<CleanupResult> CleanupAsync(bool dryRun, bool record, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
-            var s = _settings.Get();
+            var s = _settings();
             if (!dryRun && s.Mode != CleanupMode.Delete)
             {
                 return new CleanupResult { DryRun = true, Error = $"Nothing was deleted: cleanup mode is {s.Mode}. Set it to Delete in Settings first." };
             }
 
-            var (lib, report, _, radarrIndex) = await BuildAsync(s, ct);
+            var (lib, report, _, radarrIndex) = await BuildAsync(ct);
             var result = new CleanupResult { DryRun = dryRun };
             var work = new List<Work>();
 
             foreach (var sr in report.Shows)
             {
                 var show = lib.Shows.First(x => x.Id == sr.ShowId);
-                if (s.DeleteShows && sr.Eligible && sr.ArrId is int id)
+                var viaSonarr = sr.Via == "Sonarr";
+                if (sr.Via == null)
                 {
-                    work.Add(new Work("Show", sr.Name, null, null, sr.Reason, id, show, null));
+                    continue;
                 }
-                else if (s.DeleteSeasons && sr.ArrId is int sid)
+
+                if (s.DeleteShows && sr.Eligible)
+                {
+                    work.Add(new Work("Show", sr.Name, null, null, sr.Reason, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Show", sr.ShowId, null, null)));
+                }
+                else if (s.DeleteSeasons)
                 {
                     work.AddRange(sr.Seasons.Where(x => x.Eligible && x.Number.HasValue)
-                        .Select(x => new Work("Season", sr.Name, x.Name, x.Number, x.Reason, sid, show, null)));
+                        .Select(x => new Work("Season", sr.Name, x.Name, x.Number, x.Reason, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Season", sr.ShowId, x.SeasonId, x.Number))));
                 }
             }
 
             if (s.DeleteMovies)
             {
-                foreach (var mr in report.Movies.Where(m => m.Eligible && m.ArrId.HasValue))
+                foreach (var mr in report.Movies.Where(m => m.Eligible && m.Via != null))
                 {
-                    var movie = lib.Movies.First(x => x.Id == mr.MovieId);
-                    var rm = radarrIndex.Values.FirstOrDefault(v => v.Item.Id == mr.ArrId);
-                    work.Add(new Work("Movie", mr.Name + (mr.Year.HasValue ? $" ({mr.Year})" : ""), null, null, mr.Reason, mr.ArrId!.Value, null, rm));
+                    var title = mr.Name + (mr.Year.HasValue ? $" ({mr.Year})" : "");
+                    if (mr.Via == "Radarr")
+                    {
+                        var rm = radarrIndex.Values.FirstOrDefault(v => v.Item.Id == mr.ArrId);
+                        work.Add(new Work("Movie", title, null, null, mr.Reason, mr.ArrId, null, rm, null));
+                    }
+                    else
+                    {
+                        work.Add(new Work("Movie", title, null, null, mr.Reason, null, null, null, new DirectTarget("Movie", mr.MovieId, null, null)));
+                    }
                 }
             }
 
@@ -194,7 +249,11 @@ public class ClearrService
                 {
                     // ---- plan: what exactly would be removed, and how big is it?
                     List<EpisodeFile> files = new();
-                    if (w.Kind == "Movie")
+                    if (w.Direct != null)
+                    {
+                        entry.Bytes = _direct!.Measure(w.Direct);
+                    }
+                    else if (w.Kind == "Movie")
                     {
                         if (w.Movie?.FileId is null)
                         {
@@ -207,7 +266,7 @@ public class ClearrService
                     }
                     else
                     {
-                        var all = await sonarr!.EpisodeFilesAsync(w.ArrId, ct);
+                        var all = await sonarr!.EpisodeFilesAsync(w.ArrId!.Value, ct);
                         files = w.SeasonNumber is int n ? all.Where(f => f.SeasonNumber == n).ToList() : all;
                         if (files.Count == 0)
                         {
@@ -240,21 +299,31 @@ public class ClearrService
                     if (dryRun)
                     {
                         entry.Action = "WouldDelete";
+                        if (w.Direct != null)
+                        {
+                            entry.Detail += " · would be removed through Jellyfin (not managed by Sonarr/Radarr)";
+                        }
+
                         result.TotalBytes += entry.Bytes;
                         result.Actions.Add(entry);
                         continue;
                     }
 
-                    // ---- act: unmonitor first; if that fails nothing is deleted.
-                    if (w.Kind == "Movie")
+                    // ---- act
+                    if (w.Direct != null)
                     {
-                        await radarr!.UnmonitorAsync(w.ArrId, ct);
+                        entry.Detail += " · " + _direct!.Delete(w.Direct);
+                    }
+                    else if (w.Kind == "Movie")
+                    {
+                        // Unmonitor first; if that fails nothing is deleted.
+                        await radarr!.UnmonitorAsync(w.ArrId!.Value, ct);
                         await radarr.DeleteMovieFileAsync(w.Movie!.FileId!.Value, ct);
                         entry.Detail += " · unmonitored and file deleted in Radarr";
                     }
                     else
                     {
-                        await sonarr!.UnmonitorAsync(w.ArrId, w.SeasonNumber, ct);
+                        await sonarr!.UnmonitorAsync(w.ArrId!.Value, w.SeasonNumber, ct);
                         var done = 0;
                         try
                         {
@@ -277,13 +346,13 @@ public class ClearrService
                     entry.Action = "Deleted";
                     result.TotalBytes += entry.Bytes;
                     deletedAny = true;
-                    _log.LogInformation("Deleted {Kind} {Title} {Season} ({Bytes} bytes)", w.Kind, w.Title, w.SeasonName, entry.Bytes);
+                    _log.LogInformation("Clearr deleted {Kind} {Title} {Season} ({Bytes} bytes)", w.Kind, w.Title, w.SeasonName, entry.Bytes);
                 }
-                catch (Exception ex) when (ex is ApiException or ArgumentException)
+                catch (Exception ex) when (ex is ApiException or ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException)
                 {
                     entry.Action = "Failed";
                     entry.Detail = ex.Message;
-                    _log.LogError("Failed {Kind} {Title} {Season}: {Message}", w.Kind, w.Title, w.SeasonName, ex.Message);
+                    _log.LogError("Clearr failed {Kind} {Title} {Season}: {Message}", w.Kind, w.Title, w.SeasonName, ex.Message);
                 }
 
                 result.Actions.Add(entry);
@@ -293,9 +362,9 @@ public class ClearrService
             {
                 try
                 {
-                    await new JellyfinClient(Http(), s.Jellyfin).RefreshLibraryAsync(ct);
+                    await _source.RefreshAsync(ct);
                 }
-                catch (ApiException ex)
+                catch (Exception ex) when (ex is ApiException or InvalidOperationException)
                 {
                     _log.LogWarning("Jellyfin refresh failed: {Message}", ex.Message);
                 }
@@ -321,7 +390,7 @@ public class ClearrService
     }
 
     /// <summary>Returns a reason if Sonarr has more files in a season than Jellyfin knows episodes.</summary>
-    internal static string? UnseenFiles(ShowInfo show, List<EpisodeFile> files)
+    public static string? UnseenFiles(ShowInfo show, List<EpisodeFile> files)
     {
         foreach (var g in files.GroupBy(f => f.SeasonNumber))
         {
@@ -333,5 +402,65 @@ public class ClearrService
         }
 
         return null;
+    }
+}
+
+/// <summary>Reads the library through Jellyfin's web API (used by the Clearr app).</summary>
+public class JellyfinApiSource : ILibrarySource
+{
+    private readonly IHttpClientFactory _http;
+    private readonly Func<ClearrSettings> _settings;
+
+    public JellyfinApiSource(IHttpClientFactory http, Func<ClearrSettings> settings)
+    {
+        _http = http;
+        _settings = settings;
+    }
+
+    private JellyfinClient Client()
+    {
+        var s = _settings();
+        if (!s.Jellyfin.IsConfigured)
+        {
+            throw new ApiException("Jellyfin isn't set up yet. Add its URL and API key in Settings.");
+        }
+
+        var c = _http.CreateClient("clearr");
+        c.Timeout = TimeSpan.FromSeconds(100);
+        return new JellyfinClient(c, s.Jellyfin);
+    }
+
+    public Task<LibrarySnapshot> LoadAsync(CancellationToken ct) => Client().LoadAsync(ct);
+
+    public Task RefreshAsync(CancellationToken ct) => Client().RefreshLibraryAsync(ct);
+}
+
+/// <summary>The shared web UI (ui/ folder), embedded so both the app and the plugin serve identical files.</summary>
+public static class ClearrUi
+{
+    public static Stream? Open(string name) =>
+        typeof(ClearrUi).Assembly.GetManifestResourceStream("ClearrUi." + Path.GetFileName(name));
+
+    public static string ContentType(string name) => Path.GetExtension(name) switch
+    {
+        ".js" => "text/javascript; charset=utf-8",
+        ".css" => "text/css; charset=utf-8",
+        ".svg" => "image/svg+xml",
+        _ => "application/octet-stream",
+    };
+}
+
+/// <summary>Validation both hosts apply when settings are saved.</summary>
+public static class SettingsRules
+{
+    public static string? Normalize(ClearrSettings s)
+    {
+        s.GraceDays = Math.Max(0, s.GraceDays);
+        s.InactiveDays = Math.Max(1, s.InactiveDays);
+        s.SampledMaxEpisodes = Math.Max(0, s.SampledMaxEpisodes);
+        s.MaxDeleteGbPerRun = Math.Max(0, s.MaxDeleteGbPerRun);
+        s.KeepTag = (s.KeepTag ?? "").Trim();
+        s.ExcludedUserIds ??= new();
+        return s.Https.Port is < 1 or > 65535 ? "HTTPS port must be between 1 and 65535" : null;
     }
 }

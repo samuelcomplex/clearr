@@ -123,6 +123,8 @@ public class ShowReport
     public string? KeptBy { get; set; }
     public bool Managed { get; set; }
     public int? ArrId { get; set; }
+    /// <summary>How it would be removed: "Sonarr", "Jellyfin" (plugin fallback) or null (can't be).</summary>
+    public string? Via { get; set; }
     public string? TvdbId { get; set; }
     public List<UserProgress> Users { get; set; } = new();
     public List<SeasonReport> Seasons { get; set; } = new();
@@ -139,6 +141,8 @@ public class MovieReport
     public string? KeptBy { get; set; }
     public bool Managed { get; set; }
     public int? ArrId { get; set; }
+    /// <summary>How it would be removed: "Radarr", "Jellyfin" (plugin fallback) or null (can't be).</summary>
+    public string? Via { get; set; }
     public List<UserProgress> Users { get; set; } = new();
     public bool Eligible { get; set; }
     public string Reason { get; set; } = "";
@@ -150,6 +154,8 @@ public class WatchReport
     public List<string> TrackedUsers { get; set; } = new();
     public bool SonarrConnected { get; set; }
     public bool RadarrConnected { get; set; }
+    /// <summary>True when unmanaged items may be removed through Jellyfin (plugin with the fallback on).</summary>
+    public bool DirectDelete { get; set; }
     public List<string> Warnings { get; set; } = new();
     public List<ShowReport> Shows { get; set; } = new();
     public List<MovieReport> Movies { get; set; } = new();

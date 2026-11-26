@@ -48,7 +48,14 @@ builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<KeepStore>();
 builder.Services.AddSingleton<HistoryStore>();
 builder.Services.AddSingleton<AuthService>();
-builder.Services.AddSingleton<ClearrService>();
+builder.Services.AddSingleton<ILibrarySource>(sp => new JellyfinApiSource(sp.GetRequiredService<IHttpClientFactory>(), sp.GetRequiredService<SettingsStore>().Get));
+builder.Services.AddSingleton(sp => new ClearrEngine(
+    sp.GetRequiredService<IHttpClientFactory>(),
+    sp.GetRequiredService<SettingsStore>().Get,
+    sp.GetRequiredService<ILibrarySource>(),
+    sp.GetRequiredService<KeepStore>(),
+    sp.GetRequiredService<HistoryStore>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("Clearr")));
 builder.Services.AddSingleton<Scheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Scheduler>());
 
@@ -74,6 +81,13 @@ app.Use(async (ctx, next) =>
 });
 
 app.MapGet("/ping", () => "ok");
+
+// The shared UI (embedded in Clearr.Core, identical to what the Jellyfin plugin serves).
+app.MapGet("/ui/{file}", (string file) =>
+{
+    var stream = ClearrUi.Open(file);
+    return stream == null ? Results.NotFound() : Results.Stream(stream, ClearrUi.ContentType(file));
+});
 
 var api = app.MapGroup("/api");
 
@@ -143,13 +157,10 @@ api.MapPut("/settings", async (HttpContext ctx, SettingsStore st) =>
         incoming.PasswordHash = AuthService.Hash(newPassword);
     }
 
-    incoming.GraceDays = Math.Max(0, incoming.GraceDays);
-    incoming.InactiveDays = Math.Max(1, incoming.InactiveDays);
-    incoming.SampledMaxEpisodes = Math.Max(0, incoming.SampledMaxEpisodes);
-    incoming.MaxDeleteGbPerRun = Math.Max(0, incoming.MaxDeleteGbPerRun);
-    if (incoming.Https.Port is < 1 or > 65535)
+    incoming.AllowDirectDelete = false; // plugin-only setting
+    if (SettingsRules.Normalize(incoming) is string problem)
     {
-        return Results.BadRequest(new { error = "HTTPS port must be between 1 and 65535" });
+        return Results.BadRequest(new { error = problem });
     }
 
     if (incoming.Https.Enabled)
@@ -213,11 +224,11 @@ api.MapGet("/users", async (SettingsStore st, IHttpClientFactory f, Cancellation
     }
 });
 
-api.MapGet("/report", async (ClearrService svc, SettingsStore st, CancellationToken ct) =>
+api.MapGet("/report", async (ClearrEngine svc, CancellationToken ct) =>
 {
     try
     {
-        var (_, report, _, _) = await svc.BuildAsync(st.Get(), ct);
+        var (_, report, _, _) = await svc.BuildAsync(ct);
         return Results.Ok(report);
     }
     catch (Exception ex) when (ex is ApiException or ArgumentException)
@@ -226,7 +237,7 @@ api.MapGet("/report", async (ClearrService svc, SettingsStore st, CancellationTo
     }
 });
 
-api.MapPost("/cleanup", async (bool? dryRun, ClearrService svc, CancellationToken ct) =>
+api.MapPost("/cleanup", async (bool? dryRun, ClearrEngine svc, CancellationToken ct) =>
 {
     var dry = dryRun ?? true;
     try
@@ -260,9 +271,9 @@ api.MapPost("/restart", (IHostApplicationLifetime life) =>
     return Results.Ok(new { ok = true });
 });
 
-api.MapGet("/history", (HistoryStore h) => Results.Ok(h.GetAll()));
+api.MapGet("/history", (ClearrEngine svc) => Results.Ok(svc.History()));
 
-api.MapPost("/keep", async (HttpContext ctx, ClearrService svc, CancellationToken ct) =>
+api.MapPost("/keep", async (HttpContext ctx, ClearrEngine svc, CancellationToken ct) =>
 {
     var body = await JsonNode.ParseAsync(ctx.Request.Body, cancellationToken: ct);
     var id = body?["id"]?.GetValue<string>();

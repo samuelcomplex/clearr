@@ -53,6 +53,12 @@ public class ClearrSettings
     public string ScheduleTime { get; set; } = "04:00";
     public bool RefreshJellyfinAfterCleanup { get; set; } = true;
 
+    /// <summary>
+    /// Plugin only: items Sonarr/Radarr don't manage may be deleted directly through Jellyfin.
+    /// Ignored by the Clearr app, which only ever removes through Sonarr/Radarr.
+    /// </summary>
+    public bool AllowDirectDelete { get; set; } = false;
+
     // ---- Flags ----
     public int InactiveDays { get; set; } = 30;
     public int SampledMaxEpisodes { get; set; } = 3;

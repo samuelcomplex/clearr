@@ -187,9 +187,9 @@ settings.Save(new ClearrSettings
     GraceDays = 0,
     MaxDeleteGbPerRun = 0,
 });
-var svc = new ClearrService(new Factory(), settings, new KeepStore(paths), new HistoryStore(paths), NullLogger<ClearrService>.Instance);
+var svc = new ClearrEngine(new Factory(), settings.Get, new JellyfinApiSource(new Factory(), settings.Get), new KeepStore(paths), new HistoryStore(paths), NullLogger.Instance);
 
-var (_, report, _, _) = await svc.BuildAsync(settings.Get(), default);
+var (_, report, _, _) = await svc.BuildAsync(default);
 foreach (var w in report.Warnings) Console.WriteLine("  warning: " + w);
 var show = report.Shows.SingleOrDefault(s => s.Name.Contains("Breaking Bad"));
 var movie = report.Movies.SingleOrDefault(m => m.Name.Contains("Matrix"));

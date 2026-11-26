@@ -84,7 +84,7 @@ public class SettingsStore
 }
 
 /// <summary>Items (show, season or movie ids) marked Keep in Clearr.</summary>
-public class KeepStore
+public class KeepStore : IKeepStore
 {
     private readonly object _lock = new();
     private readonly string _path;
@@ -125,7 +125,7 @@ public class KeepStore
     }
 }
 
-public class HistoryStore
+public class HistoryStore : IHistoryStore
 {
     private const int MaxEntries = 2000;
     private readonly object _lock = new();

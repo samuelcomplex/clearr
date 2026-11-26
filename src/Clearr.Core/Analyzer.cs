@@ -8,8 +8,10 @@ namespace Clearr.Core;
 /// </summary>
 public static class Analyzer
 {
-    public static WatchReport Build(LibrarySnapshot lib, ClearrSettings s, Func<string, bool> keptInClearr, DateTime now)
+    /// <param name="directDeleteAvailable">The host can delete through Jellyfin (the plugin). Combined with the AllowDirectDelete setting.</param>
+    public static WatchReport Build(LibrarySnapshot lib, ClearrSettings s, Func<string, bool> keptInClearr, DateTime now, bool directDeleteAvailable = false)
     {
+        var direct = directDeleteAvailable && s.AllowDirectDelete;
         var excluded = new HashSet<string>(s.ExcludedUserIds ?? new(), StringComparer.OrdinalIgnoreCase);
         var users = lib.Users.Where(u => !excluded.Contains(u.Id)).ToList();
 
@@ -20,11 +22,12 @@ public static class Analyzer
             SonarrConnected = lib.SonarrConnected,
             RadarrConnected = lib.RadarrConnected,
             Warnings = lib.Warnings.ToList(),
+            DirectDelete = direct,
         };
 
         foreach (var show in lib.Shows.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
         {
-            var r = AnalyzeShow(show, lib, s, users, keptInClearr, now);
+            var r = AnalyzeShow(show, lib, s, users, keptInClearr, now, direct);
             if (r != null)
             {
                 report.Shows.Add(r);
@@ -33,13 +36,13 @@ public static class Analyzer
 
         foreach (var movie in lib.Movies.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
         {
-            report.Movies.Add(AnalyzeMovie(movie, lib, s, users, keptInClearr, now));
+            report.Movies.Add(AnalyzeMovie(movie, lib, s, users, keptInClearr, now, direct));
         }
 
         return report;
     }
 
-    private static ShowReport? AnalyzeShow(ShowInfo show, LibrarySnapshot lib, ClearrSettings s, List<MediaUser> users, Func<string, bool> keptInClearr, DateTime now)
+    private static ShowReport? AnalyzeShow(ShowInfo show, LibrarySnapshot lib, ClearrSettings s, List<MediaUser> users, Func<string, bool> keptInClearr, DateTime now, bool direct)
     {
         var seasons = show.Seasons
             .Where(x => x.Episodes.Count > 0 && (s.IncludeSpecials || x.Number != 0))
@@ -63,13 +66,14 @@ public static class Analyzer
             KeptBy = showKeptBy,
             Managed = show.ArrId.HasValue,
             ArrId = show.ArrId,
+            Via = lib.SonarrConnected && show.ArrId.HasValue ? "Sonarr" : direct ? "Jellyfin" : null,
             TvdbId = show.ProviderIds.TryGetValue("Tvdb", out var tvdb) ? tvdb : null,
         };
 
         var maxSeason = seasons.Where(x => x.Number > 0).Select(x => x.Number!.Value).DefaultIfEmpty(-1).Max();
         var continuing = string.Equals(show.Status, "Continuing", StringComparison.OrdinalIgnoreCase);
-        var notManaged = lib.SonarrConnected && !show.ArrId.HasValue ? "Not in Sonarr — Clearr only removes shows Sonarr manages" : null;
-        var noSonarr = !lib.SonarrConnected ? "Sonarr isn't connected" : null;
+        var notManaged = !direct && lib.SonarrConnected && !show.ArrId.HasValue ? "Not in Sonarr — Clearr only removes shows Sonarr manages" : null;
+        var noSonarr = !direct && !lib.SonarrConnected ? "Sonarr isn't connected" : null;
 
         foreach (var season in seasons)
         {
@@ -117,7 +121,7 @@ public static class Analyzer
         return r;
     }
 
-    private static MovieReport AnalyzeMovie(MovieInfo movie, LibrarySnapshot lib, ClearrSettings s, List<MediaUser> users, Func<string, bool> keptInClearr, DateTime now)
+    private static MovieReport AnalyzeMovie(MovieInfo movie, LibrarySnapshot lib, ClearrSettings s, List<MediaUser> users, Func<string, bool> keptInClearr, DateTime now, bool direct)
     {
         var (kept, keptBy) = Kept(movie.Id, movie.Tags, movie.ArrKeep, "Radarr", s, keptInClearr);
         var r = new MovieReport
@@ -129,6 +133,7 @@ public static class Analyzer
             KeptBy = keptBy,
             Managed = movie.ArrId.HasValue,
             ArrId = movie.ArrId,
+            Via = lib.RadarrConnected && movie.ArrId.HasValue ? "Radarr" : direct ? "Jellyfin" : null,
         };
 
         var single = new List<EpisodeInfo> { new() { Id = movie.Id } };
@@ -139,9 +144,9 @@ public static class Analyzer
             r.Users.Add(p);
         }
 
-        string? block = !lib.RadarrConnected ? "Radarr isn't connected"
-            : !movie.ArrId.HasValue ? "Not in Radarr — Clearr only removes movies Radarr manages"
-            : null;
+        string? block = r.Via != null ? null
+            : !lib.RadarrConnected ? "Radarr isn't connected"
+            : "Not in Radarr — Clearr only removes movies Radarr manages";
         (r.Eligible, r.Reason) = Decide(r.Users, s, now, kept, block);
         return r;
     }
