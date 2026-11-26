@@ -44,6 +44,8 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npx eslint --max-warnings 0
+      - name: UI smoke test (shared UI as app and plugin)
+        run: npm run test:ui
 
   dockerfile:
     runs-on: ubuntu-latest
