@@ -30,13 +30,25 @@ public class FakeWorld
 
     public int JellyfinRefreshes;
     public List<string> Log = new();
+
+    // Failure injection and hooks for the safety tests.
+    public HashSet<int> FailSeriesPut = new();
+    public HashSet<int> FailMoviePut = new();
+    public HashSet<int> FailEpisodeFileDelete = new();
+    public Action<string>? OnChange;
+
+    public void Record(string line)
+    {
+        Log.Add(line);
+        OnChange?.Invoke(line);
+    }
 }
 
 public static class FakeServers
 {
     public static async Task<(WebApplication App, string Url)> StartAsync(FakeWorld w)
     {
-        var b = WebApplication.CreateSlimBuilder();
+        var b = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = new[] { "--hostBuilder:reloadConfigOnChange=false" } });
         b.WebHost.UseUrls("http://127.0.0.1:0");
         b.Logging.ClearProviders();
         var app = b.Build();
@@ -128,17 +140,27 @@ public static class FakeServers
         app.MapGet("/sonarr/api/v3/series/{id:int}", (int id) => Results.Text(w.SonarrSeries[id].ToJsonString(), "application/json"));
         app.MapPut("/sonarr/api/v3/series/{id:int}", async (int id, HttpContext c) =>
         {
+            if (w.FailSeriesPut.Contains(id))
+            {
+                return Results.StatusCode(500);
+            }
+
             var body = (JsonObject)(await JsonNode.ParseAsync(c.Request.Body))!;
             w.SonarrSeries[id] = body;
-            w.Log.Add($"PUT series {id}");
+            w.Record($"PUT series {id}");
             return Results.Text(body.ToJsonString(), "application/json");
         });
         app.MapGet("/sonarr/api/v3/episodefile", (int seriesId) =>
             Results.Json(w.EpisodeFiles.Where(f => f.SeriesId == seriesId).Select(f => new { id = f.Id, seriesId = f.SeriesId, seasonNumber = f.Season, size = f.Size, relativePath = $"S{f.Season:00}/{f.Id}.mkv" })));
         app.MapDelete("/sonarr/api/v3/episodefile/{id:int}", (int id) =>
         {
+            if (w.FailEpisodeFileDelete.Contains(id))
+            {
+                return Results.StatusCode(500);
+            }
+
             w.EpisodeFiles.RemoveAll(f => f.Id == id);
-            w.Log.Add($"DELETE episodefile {id}");
+            w.Record($"DELETE episodefile {id}");
             return Results.Ok();
         });
 
@@ -148,9 +170,14 @@ public static class FakeServers
         app.MapGet("/radarr/api/v3/movie/{id:int}", (int id) => Results.Text(w.RadarrMovies[id].ToJsonString(), "application/json"));
         app.MapPut("/radarr/api/v3/movie/{id:int}", async (int id, HttpContext c) =>
         {
+            if (w.FailMoviePut.Contains(id))
+            {
+                return Results.StatusCode(500);
+            }
+
             var body = (JsonObject)(await JsonNode.ParseAsync(c.Request.Body))!;
             w.RadarrMovies[id] = body;
-            w.Log.Add($"PUT movie {id}");
+            w.Record($"PUT movie {id}");
             return Results.Text(body.ToJsonString(), "application/json");
         });
         app.MapDelete("/radarr/api/v3/moviefile/{id:int}", (int id) =>
@@ -161,7 +188,7 @@ public static class FakeServers
                 m["hasFile"] = false;
             }
 
-            w.Log.Add($"DELETE moviefile {id}");
+            w.Record($"DELETE moviefile {id}");
             return Results.Ok();
         });
 

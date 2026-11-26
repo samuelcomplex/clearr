@@ -46,13 +46,13 @@ public class Scheduler : BackgroundService
                 if (DateOnly.FromDateTime(now) > _lastRun && now.TimeOfDay >= ParseTime(s.ScheduleTime))
                 {
                     _lastRun = DateOnly.FromDateTime(now);
-                    if (s.Mode == CleanupMode.Off || !s.Jellyfin.IsConfigured)
+                    if (ClearrEngine.ScheduledDryRun(s.Mode) is not bool dry || !s.Jellyfin.IsConfigured)
                     {
                         continue;
                     }
 
                     _log.LogInformation("Scheduled cleanup ({Mode})", s.Mode);
-                    var r = await _clearr.CleanupAsync(dryRun: s.Mode != CleanupMode.Delete, record: true, stop);
+                    var r = await _clearr.CleanupAsync(dryRun: dry, record: true, stop);
                     LastRunAt = DateTime.UtcNow;
                     LastRunSummary = $"{(r.DryRun ? "Dry run" : "Cleanup")}: {r.Actions.Count(a => a.Action is "Deleted" or "WouldDelete")} item(s), {r.TotalBytes / 1073741824.0:0.0} GB";
                 }

@@ -281,10 +281,10 @@ catch (ArgumentException ex) { Expect(ex.Message.Contains("not found"), "Missing
 
 try { Clearr.Api.Certificates.Load(new HttpsSettings { CertificatePath = Path.Combine(certDir, "fullchain.pem") }, cp); Expect(false, "PEM without key rejected"); }
 catch (Exception ex) { Expect(ex is ArgumentException or System.Security.Cryptography.CryptographicException, "PEM without its key rejected: " + ex.Message.Split('.')[0]); }
-var appThread = new Thread(() => typeof(Clearr.Api.AuthService).Assembly.EntryPoint!.Invoke(null, new object[] { Array.Empty<string>() })) { IsBackground = true };
+var appThread = new Thread(() => { try { typeof(Clearr.Api.AuthService).Assembly.EntryPoint!.Invoke(null, new object[] { Array.Empty<string>() }); } catch (Exception ex) { Console.WriteLine("APP CRASHED: " + (ex.InnerException ?? ex)); } }) { IsBackground = true };
 appThread.Start();
 var http = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:16565") };
-for (var i = 0; i < 50; i++)
+for (var i = 0; i < 150; i++)
 {
     try { if ((await http.GetStringAsync("/ping")) == "ok") break; } catch { }
     await Task.Delay(200);
@@ -327,6 +327,7 @@ var keyed = new HttpRequestMessage(HttpMethod.Get, "/api/history");
 keyed.Headers.Add("X-Api-Key", apiKey);
 Expect((await anon.SendAsync(keyed)).IsSuccessStatusCode, "API key header works");
 
+fails += await SafetyTests.RunAsync();
 await fake.StopAsync();
 Console.WriteLine(fails == 0 ? "\nALL PASSED" : $"\n{fails} FAILED");
 try { Directory.Delete(tmp, true); } catch { }

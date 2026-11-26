@@ -240,11 +240,27 @@ public class ClearrEngine
             var cap = s.MaxDeleteGbPerRun > 0 ? s.MaxDeleteGbPerRun * 1024L * 1024L * 1024L : long.MaxValue;
             long planned = 0;
             var deletedAny = false;
+            string? stopped = null;
 
             foreach (var w in work)
             {
                 ct.ThrowIfCancellationRequested();
                 var entry = new HistoryEntry { Date = DateTime.UtcNow, Kind = w.Kind, Title = w.Title, SeasonName = w.SeasonName, Detail = w.Reason };
+
+                // Safety: re-read the mode before every real deletion, so switching away from Delete stops a run that's in progress.
+                if (!dryRun && stopped == null && _settings().Mode is var current && current != CleanupMode.Delete)
+                {
+                    stopped = $"Stopped: cleanup mode was changed to {current} during the run";
+                    _log.LogWarning("Cleanup stopped: mode changed to {Mode}", current);
+                }
+
+                if (stopped != null)
+                {
+                    Skip(entry, stopped);
+                    result.Actions.Add(entry);
+                    continue;
+                }
+
                 try
                 {
                     // ---- plan: what exactly would be removed, and how big is it?
@@ -382,6 +398,14 @@ public class ClearrEngine
             _gate.Release();
         }
     }
+
+    /// <summary>What a scheduled run does in each mode: null = don't run, true = dry run, false = delete.</summary>
+    public static bool? ScheduledDryRun(CleanupMode mode) => mode switch
+    {
+        CleanupMode.Delete => false,
+        CleanupMode.DryRun => true,
+        _ => null,
+    };
 
     private static void Skip(HistoryEntry e, string why)
     {

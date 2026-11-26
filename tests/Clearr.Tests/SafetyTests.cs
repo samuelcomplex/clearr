@@ -1,0 +1,571 @@
+// Deletion safety tests: every way a cleanup can run, checked against what may be deleted.
+// The randomized part re-implements the rules independently and compares, so a bug in the
+// Analyzer can't hide behind tests written from the same code.
+using System.Text.Json.Nodes;
+using Clearr.Core;
+using Clearr.Storage;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Clearr.Tests;
+
+internal static class SafetyTests
+{
+    private const long GB = 1024L * 1024 * 1024;
+
+    public static async Task<int> RunAsync()
+    {
+        var fails = 0;
+        void Expect(bool ok, string what)
+        {
+            Console.WriteLine((ok ? "PASS " : "FAIL ") + "[safety] " + what);
+            if (!ok)
+            {
+                fails++;
+            }
+        }
+
+        await Scenarios(Expect);
+        await Randomized(Expect, worlds: 150);
+        return fails;
+    }
+
+    // ------------------------------------------------------------------ fixed scenarios
+
+    private static async Task Scenarios(Action<bool, string> expect)
+    {
+        Expect(ClearrEngine.ScheduledDryRun(CleanupMode.Off) == null, "Schedule: Off doesn't run at all");
+        Expect(ClearrEngine.ScheduledDryRun(CleanupMode.DryRun) == true, "Schedule: Dry run only previews");
+        Expect(ClearrEngine.ScheduledDryRun(CleanupMode.Delete) == false, "Schedule: only Delete deletes");
+
+        void Expect(bool ok, string what) => expect(ok, what);
+
+        // A world where everything is finished and eligible.
+        var b = new WorldBuilder(seed: 1);
+        b.User("u1", "Anna");
+        var s1 = b.Show("Alpha", "Ended", new[] { 2, 2 }, inSonarr: true, gbPerFile: 2);
+        var s2 = b.Show("Beta", "Ended", new[] { 3 }, inSonarr: true, gbPerFile: 1);
+        var s3 = b.Show("Gamma", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1);
+        var m1 = b.Movie("Delta", inRadarr: true, gb: 5);
+        foreach (var s in new[] { s1, s2, s3 })
+        {
+            b.WatchAll("u1", s, daysAgo: 30);
+        }
+
+        b.WatchMovie("u1", m1, played: true, daysAgo: 30);
+        var env = await Env.StartAsync(b.World, new ClearrSettings { Mode = CleanupMode.Off });
+
+        // Off and DryRun: real cleanup refused through every entry point, nothing touched.
+        foreach (var mode in new[] { CleanupMode.Off, CleanupMode.DryRun })
+        {
+            env.Mode(mode);
+            var r = await env.Engine.CleanupAsync(false, true, default);
+            Expect(r.Error != null && r.Error.Contains(mode.ToString()) && env.World.Log.Count == 0 && env.History.GetAll().Count == 0, $"{mode}: real cleanup refused, nothing changed, nothing recorded");
+            var direct = await env.DirectEngine.CleanupAsync(false, true, default);
+            Expect(direct.Error != null && env.Deleter.Deleted.Count == 0, $"{mode}: Jellyfin fallback refused too");
+        }
+
+        // Delete mode, but a preview: still nothing touched.
+        env.Mode(CleanupMode.Delete);
+        var preview = await env.Engine.CleanupAsync(true, false, default);
+        Expect(preview.Actions.Count(a => a.Action == "WouldDelete") == 4 && env.World.Log.Count == 0 && env.History.GetAll().Count == 0, "Delete mode + preview: lists 4 items, changes nothing, records nothing");
+
+        // Mode switched to Dry run while a cleanup is running: it stops before the next item.
+        env.World.OnChange = line =>
+        {
+            if (line.StartsWith("DELETE episodefile", StringComparison.Ordinal))
+            {
+                env.Mode(CleanupMode.DryRun);
+            }
+        };
+        var interrupted = await env.Engine.CleanupAsync(false, true, default);
+        env.World.OnChange = null;
+        var deleted = interrupted.Actions.Where(a => a.Action == "Deleted").ToList();
+        Expect(deleted.Count == 1 && interrupted.Actions.Count(a => a.Action == "Skipped" && a.Detail.Contains("changed to DryRun")) == 3, "Mode changed mid-run: the item in progress finishes, the other 3 are skipped");
+        Expect(env.World.EpisodeFiles.Any(f => f.SeriesId == s2.SonarrId) && env.World.EpisodeFiles.Any(f => f.SeriesId == s3.SonarrId) && env.World.RadarrMovies[m1.RadarrId!.Value]["movieFile"] != null, "Mode changed mid-run: the other shows and the movie are untouched");
+
+        // Unmonitor fails: nothing of that item is deleted, and the failure is recorded.
+        var b2 = new WorldBuilder(seed: 2);
+        b2.User("u1", "Anna");
+        var f1 = b2.Show("Fails To Unmonitor", "Ended", new[] { 2 }, inSonarr: true, gbPerFile: 1);
+        var f2 = b2.Show("Fails Halfway", "Ended", new[] { 3 }, inSonarr: true, gbPerFile: 1);
+        var fm = b2.Movie("Movie Fails To Unmonitor", inRadarr: true, gb: 2);
+        b2.WatchAll("u1", f1, 30);
+        b2.WatchAll("u1", f2, 30);
+        b2.WatchMovie("u1", fm, true, 30);
+        b2.World.FailSeriesPut.Add(f1.SonarrId!.Value);
+        b2.World.FailMoviePut.Add(fm.RadarrId!.Value);
+        var halfwayFiles = b2.World.EpisodeFiles.Where(f => f.SeriesId == f2.SonarrId).Select(f => f.Id).ToList();
+        b2.World.FailEpisodeFileDelete.Add(halfwayFiles[1]);
+        var env2 = await Env.StartAsync(b2.World, new ClearrSettings { Mode = CleanupMode.Delete });
+        var r2 = await env2.Engine.CleanupAsync(false, true, default);
+        var a1 = r2.Actions.Single(a => a.Title == "Fails To Unmonitor");
+        Expect(a1.Action == "Failed" && b2.World.EpisodeFiles.Count(f => f.SeriesId == f1.SonarrId) == 2, "Unmonitor fails in Sonarr: no files deleted, recorded as Failed");
+        var am = r2.Actions.Single(a => a.Title.StartsWith("Movie Fails", StringComparison.Ordinal));
+        Expect(am.Action == "Failed" && b2.World.RadarrMovies[fm.RadarrId.Value]["movieFile"] != null, "Unmonitor fails in Radarr: movie file kept, recorded as Failed");
+        var a2 = r2.Actions.Single(a => a.Title == "Fails Halfway");
+        Expect(a2.Action == "Failed" && a2.Detail.Contains("after deleting 1 of 3"), "Delete fails halfway: reported with how far it got (" + a2.Detail + ")");
+        Expect(env2.History.GetAll().Count(h => h.Action == "Failed") == 3, "Failures are written to History");
+
+        // Every kind of keep holds in Delete mode.
+        var b3 = new WorldBuilder(seed: 3);
+        b3.User("u1", "Anna");
+        var k1 = b3.Show("Kept In Clearr", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1);
+        var k2 = b3.Show("Kept By Jellyfin Tag", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1, jellyfinTags: new[] { "KEEP" });
+        var k3 = b3.Show("Kept By Sonarr Tag", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1, sonarrTags: new[] { "keep" });
+        var k4 = b3.Show("Season Kept", "Ended", new[] { 1, 1 }, inSonarr: true, gbPerFile: 1);
+        var km = b3.Movie("Movie Kept In Clearr", inRadarr: true, gb: 1);
+        foreach (var s in new[] { k1, k2, k3, k4 })
+        {
+            b3.WatchAll("u1", s, 30);
+        }
+
+        b3.WatchMovie("u1", km, true, 30);
+        var env3 = await Env.StartAsync(b3.World, new ClearrSettings { Mode = CleanupMode.Delete });
+        env3.Keep.Set(k1.Id, true);
+        env3.Keep.Set(k4.Seasons[1].Id, true);
+        env3.Keep.Set(km.Id, true);
+        var r3 = await env3.Engine.CleanupAsync(false, true, default);
+        Expect(b3.World.EpisodeFiles.Count(f => f.SeriesId == k1.SonarrId || f.SeriesId == k2.SonarrId || f.SeriesId == k3.SonarrId) == 3, "Keep in Clearr, Jellyfin tag (any case) and Sonarr tag all protect a show");
+        Expect(b3.World.EpisodeFiles.Any(f => f.SeriesId == k4.SonarrId && f.Season == 2) && !b3.World.EpisodeFiles.Any(f => f.SeriesId == k4.SonarrId && f.Season == 1), "Kept season stays; the show's other season is removed");
+        Expect(b3.World.RadarrMovies[km.RadarrId!.Value]["movieFile"] != null, "Keep in Clearr protects a movie");
+
+        // Grace period, someone still watching, someone who never started.
+        var b4 = new WorldBuilder(seed: 4);
+        b4.User("u1", "Anna");
+        b4.User("u2", "Bjorn");
+        b4.User("u3", "Cleo");
+        var g1 = b4.Show("Finished Yesterday", "Ended", new[] { 2 }, inSonarr: true, gbPerFile: 1);
+        var g2 = b4.Show("Bjorn Still Watching", "Ended", new[] { 3 }, inSonarr: true, gbPerFile: 1);
+        b4.WatchAll("u1", g1, 1);
+        b4.WatchAll("u1", g2, 30);
+        b4.Watch("u2", g2.Episodes.Take(1), 1);
+        var env4 = await Env.StartAsync(b4.World, new ClearrSettings { Mode = CleanupMode.Delete, GraceDays = 7 });
+        var r4 = await env4.Engine.CleanupAsync(false, true, default);
+        Expect(b4.World.Log.Count == 0 && r4.Actions.Count == 0, "Grace period and an active viewer both block deletion (Cleo never started and doesn't matter)");
+    }
+
+    // ------------------------------------------------------------------ randomized
+
+    private static async Task Randomized(Action<bool, string> expect, int worlds)
+    {
+        var violations = new List<string>();
+        int deletedItems = 0, realRuns = 0;
+        for (var seed = 100; seed < 100 + worlds; seed++)
+        {
+            var rnd = new Random(seed);
+            var b = new WorldBuilder(seed);
+            var users = Enumerable.Range(1, rnd.Next(1, 4)).Select(i => b.User("u" + i, "User" + i)).ToList();
+            var shows = new List<WorldBuilder.ShowRef>();
+            for (var i = 0; i < rnd.Next(1, 6); i++)
+            {
+                var eps = Enumerable.Range(0, rnd.Next(1, 4)).Select(_ => rnd.Next(1, 5)).ToArray();
+                shows.Add(b.Show("Show" + i, rnd.Next(3) == 0 ? "Continuing" : "Ended", eps, inSonarr: rnd.Next(5) > 0, gbPerFile: rnd.Next(1, 5),
+                    extraFile: rnd.Next(7) == 0, sonarrTags: rnd.Next(7) == 0 ? new[] { "keep" } : null, jellyfinTags: rnd.Next(10) == 0 ? new[] { "Keep" } : null));
+            }
+
+            var movies = new List<WorldBuilder.MovieRef>();
+            for (var i = 0; i < rnd.Next(0, 4); i++)
+            {
+                movies.Add(b.Movie("Movie" + i, inRadarr: rnd.Next(5) > 0, gb: rnd.Next(1, 9), jellyfinTags: rnd.Next(10) == 0 ? new[] { "keep" } : null));
+            }
+
+            foreach (var u in users)
+            {
+                foreach (var s in shows)
+                {
+                    switch (rnd.Next(7))
+                    {
+                        case 0: break;
+                        case 1 or 5 or 6: b.WatchAll(u, s, rnd.Next(0, 60)); break;
+                        case 2: b.Watch(u, s.Episodes.Take(rnd.Next(1, s.Episodes.Count + 1)), rnd.Next(0, 60)); break;
+                        case 3: b.Watch(u, s.Episodes.Where(e => e.Season == 1), rnd.Next(0, 60)); break;
+                        default: b.Partial(u, s.Episodes[rnd.Next(s.Episodes.Count)], rnd.Next(0, 60)); break;
+                    }
+                }
+
+                foreach (var m in movies)
+                {
+                    if (rnd.Next(3) > 0)
+                    {
+                        b.WatchMovie(u, m, played: rnd.Next(3) > 0, daysAgo: rnd.Next(0, 60));
+                    }
+                }
+            }
+
+            var settings = new ClearrSettings
+            {
+                Mode = rnd.Next(10) < 6 ? CleanupMode.Delete : (CleanupMode)rnd.Next(2),
+                DeleteSeasons = rnd.Next(4) > 0,
+                DeleteShows = rnd.Next(4) > 0,
+                DeleteMovies = rnd.Next(4) > 0,
+                RequireEndedForShowDelete = rnd.Next(4) > 0,
+                ProtectLatestSeasonOfContinuing = rnd.Next(4) > 0,
+                GraceDays = rnd.Next(0, 15),
+                InactiveDays = rnd.Next(5, 40),
+                SampledMaxEpisodes = rnd.Next(0, 4),
+                AbandonedUsersBlockCleanup = rnd.Next(2) == 0,
+                MaxDeleteGbPerRun = new[] { 0, 2, 5, 12, 50 }[rnd.Next(5)],
+                ExcludedUserIds = users.Where(_ => rnd.Next(5) == 0).ToList(),
+            };
+            var dryRun = rnd.Next(5) == 0;
+            var env = await Env.StartAsync(b.World, settings);
+            var keptIds = new HashSet<string>();
+            foreach (var id in shows.Select(s => s.Id).Concat(shows.SelectMany(s => s.Seasons.Select(x => x.Id))).Concat(movies.Select(m => m.Id)))
+            {
+                if (rnd.Next(10) == 0)
+                {
+                    env.Keep.Set(id, true);
+                    keptIds.Add(id);
+                }
+            }
+
+            var filesBefore = b.World.EpisodeFiles.ToList();
+            var result = await env.Engine.CleanupAsync(dryRun, true, default);
+            var tag = $"world {seed} ({settings.Mode}{(dryRun ? ", preview" : "")})";
+            var log = b.World.Log;
+            var real = !dryRun && settings.Mode == CleanupMode.Delete;
+
+            if (!real)
+            {
+                if (log.Count > 0 || b.World.EpisodeFiles.Count != filesBefore.Count)
+                {
+                    violations.Add($"{tag}: changed something without being allowed to");
+                }
+
+                await env.StopAsync();
+                continue;
+            }
+
+            realRuns++;
+            var oracle = new Oracle(b, settings, keptIds, DateTime.UtcNow);
+            var gone = filesBefore.Where(f => !b.World.EpisodeFiles.Contains(f)).ToList();
+
+            // Every removed file must be covered by something the independent rules allow.
+            foreach (var f in gone)
+            {
+                var show = shows.Single(s => s.SonarrId == f.SeriesId);
+                var asShow = settings.DeleteShows && oracle.ShowAllowed(show);
+                var asSeason = settings.DeleteSeasons && oracle.SeasonAllowed(show, f.Season);
+                if (!asShow && !asSeason)
+                {
+                    violations.Add($"{tag}: deleted a file of {show.Name} S{f.Season} that the rules don't allow");
+                }
+            }
+
+            foreach (var m in movies.Where(m => m.RadarrId != null && b.World.RadarrMovies[m.RadarrId.Value]["movieFile"] == null))
+            {
+                if (!settings.DeleteMovies || !oracle.MovieAllowed(m))
+                {
+                    violations.Add($"{tag}: deleted movie {m.Name} that the rules don't allow");
+                }
+            }
+
+            // Unmonitor before delete, for every item.
+            foreach (var del in log.Where(l => l.StartsWith("DELETE episodefile", StringComparison.Ordinal)))
+            {
+                var fid = int.Parse(del.Split(' ')[2]);
+                var series = filesBefore.Single(f => f.Id == fid).SeriesId;
+                if (log.IndexOf($"PUT series {series}") is var put && (put < 0 || put > log.IndexOf(del)))
+                {
+                    violations.Add($"{tag}: deleted a file of series {series} before unmonitoring it");
+                }
+            }
+
+            // Per-run size limit: more than one item only if they fit together.
+            var done = result.Actions.Where(a => a.Action == "Deleted").ToList();
+            deletedItems += done.Count;
+            if (settings.MaxDeleteGbPerRun > 0 && done.Count > 1 && done.Sum(a => a.Bytes) > settings.MaxDeleteGbPerRun * GB)
+            {
+                violations.Add($"{tag}: deleted {done.Sum(a => a.Bytes) / GB} GB with a {settings.MaxDeleteGbPerRun} GB limit");
+            }
+
+            // Bytes reported match what actually went.
+            var reported = done.Where(a => a.Kind != "Movie").Sum(a => a.Bytes);
+            if (reported != gone.Sum(f => f.Size))
+            {
+                violations.Add($"{tag}: history says {reported} bytes of episodes deleted, but {gone.Sum(f => f.Size)} went");
+            }
+
+            await env.StopAsync();
+        }
+
+        foreach (var v in violations.Take(10))
+        {
+            Console.WriteLine("    " + v);
+        }
+
+        expect(violations.Count == 0, $"Randomized: {worlds} random libraries, {realRuns} real cleanups, {deletedItems} items deleted, {violations.Count} rule violations");
+        expect(realRuns > 40 && deletedItems > 40, "Randomized: the random libraries actually exercise deletion");
+    }
+
+    /// <summary>The cleanup rules written out again from the README, independent of Analyzer.</summary>
+    private sealed class Oracle
+    {
+        private readonly WorldBuilder _b;
+        private readonly ClearrSettings _s;
+        private readonly HashSet<string> _kept;
+        private readonly DateTime _now;
+
+        public Oracle(WorldBuilder b, ClearrSettings s, HashSet<string> kept, DateTime now)
+        {
+            _b = b;
+            _s = s;
+            _kept = kept;
+            _now = now;
+        }
+
+        private bool TagKept(IEnumerable<string> tags) => tags.Any(t => string.Equals(t, _s.KeepTag, StringComparison.OrdinalIgnoreCase));
+
+        private bool ShowKept(WorldBuilder.ShowRef show) => _kept.Contains(show.Id) || TagKept(show.JellyfinTags) || TagKept(show.SonarrTags);
+
+        public bool SeasonAllowed(WorldBuilder.ShowRef show, int season)
+        {
+            var maxSeason = show.Seasons.Max(x => x.Number);
+            if (ShowKept(show) || _kept.Contains(show.Seasons.Single(x => x.Number == season).Id))
+            {
+                return false;
+            }
+
+            if (_s.ProtectLatestSeasonOfContinuing && show.Status == "Continuing" && season == maxSeason)
+            {
+                return false;
+            }
+
+            return NoUnseenFiles(show, season) && Done(show.Episodes.Where(e => e.Season == season).Select(e => e.Id).ToList());
+        }
+
+        public bool ShowAllowed(WorldBuilder.ShowRef show)
+        {
+            if (ShowKept(show) || show.Seasons.Any(x => _kept.Contains(x.Id)))
+            {
+                return false;
+            }
+
+            if (_s.RequireEndedForShowDelete && show.Status != "Ended")
+            {
+                return false;
+            }
+
+            return show.Seasons.All(x => NoUnseenFiles(show, x.Number)) && Done(show.Episodes.Select(e => e.Id).ToList());
+        }
+
+        public bool MovieAllowed(WorldBuilder.MovieRef m) =>
+            !_kept.Contains(m.Id) && !TagKept(m.JellyfinTags) && Done(new List<string> { m.Id });
+
+        private bool NoUnseenFiles(WorldBuilder.ShowRef show, int season) =>
+            _b.World.EpisodeFiles.Count(f => f.SeriesId == show.SonarrId && f.Season == season) <= show.Episodes.Count(e => e.Season == season);
+
+        /// <summary>Everyone (not excluded) who started it finished it, or dropped off and that's allowed; somebody finished; grace passed.</summary>
+        private bool Done(List<string> items)
+        {
+            var anyFinished = false;
+            var lastFinish = DateTime.MinValue;
+            foreach (var (uid, _) in _b.World.Users)
+            {
+                if (_s.ExcludedUserIds.Contains(uid))
+                {
+                    continue;
+                }
+
+                var data = items.Select(i => _b.World.UserData.TryGetValue((uid, i), out var d) ? d : ((bool, long, DateTime)?)null).ToList();
+                var played = data.Count(d => d is { Item1: true });
+                var partial = data.Count(d => d is { Item1: false, Item2: > 0 });
+                if (played == 0 && partial == 0)
+                {
+                    continue;
+                }
+
+                var last = data.Where(d => d is { Item1: true } || d is { Item1: false, Item2: > 0 }).Max(d => d!.Value.Item3);
+                if (played == items.Count)
+                {
+                    anyFinished = true;
+                    lastFinish = last > lastFinish ? last : lastFinish;
+                    continue;
+                }
+
+                var droppedOff = (_now - last).TotalDays >= Math.Max(1, _s.InactiveDays);
+                if (!droppedOff || _s.AbandonedUsersBlockCleanup)
+                {
+                    return false;
+                }
+            }
+
+            return anyFinished && lastFinish.AddDays(_s.GraceDays) <= _now;
+        }
+    }
+
+    // ------------------------------------------------------------------ plumbing
+
+    private sealed class Env
+    {
+        private Microsoft.AspNetCore.Builder.WebApplication _app = null!;
+        private string _tmp = "";
+
+        public FakeWorld World { get; private set; } = null!;
+
+        public SettingsStore Settings { get; private set; } = null!;
+
+        public KeepStore Keep { get; private set; } = null!;
+
+        public HistoryStore History { get; private set; } = null!;
+
+        public ClearrEngine Engine { get; private set; } = null!;
+
+        public ClearrEngine DirectEngine { get; private set; } = null!;
+
+        public FakeDeleter Deleter { get; } = new();
+
+        public static async Task<Env> StartAsync(FakeWorld w, ClearrSettings s)
+        {
+            var e = new Env { World = w };
+            var (app, url) = await FakeServers.StartAsync(w);
+            e._app = app;
+            e._tmp = Path.Combine(Path.GetTempPath(), "clearr-safety-" + Guid.NewGuid().ToString("N")[..8]);
+            var paths = new ConfigPaths(e._tmp);
+            e.Settings = new SettingsStore(paths);
+            e.Keep = new KeepStore(paths);
+            e.History = new HistoryStore(paths);
+            s.Jellyfin = new() { Url = url + "/jf", ApiKey = "jf-key" };
+            s.Sonarr = new() { Url = url + "/sonarr", ApiKey = "sonarr-key" };
+            s.Radarr = new() { Url = url + "/radarr", ApiKey = "radarr-key" };
+            s.AllowDirectDelete = true;
+            e.Settings.Save(s);
+            var f = new SimpleFactory();
+            var source = new JellyfinApiSource(f, e.Settings.Get);
+            e.Engine = new ClearrEngine(f, e.Settings.Get, source, e.Keep, e.History, NullLogger.Instance);
+            e.DirectEngine = new ClearrEngine(f, e.Settings.Get, source, e.Keep, e.History, NullLogger.Instance, e.Deleter);
+            return e;
+        }
+
+        public void Mode(CleanupMode m)
+        {
+            var s = Settings.Get();
+            s.Mode = m;
+            Settings.Save(s);
+        }
+
+        public async Task StopAsync()
+        {
+            await _app.StopAsync();
+            await _app.DisposeAsync();
+            try
+            {
+                Directory.Delete(_tmp, true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    /// <summary>Builds fake libraries with matching Jellyfin, Sonarr and Radarr state.</summary>
+    internal sealed class WorldBuilder
+    {
+        private readonly DateTime _now = DateTime.UtcNow;
+        private int _sonarrId;
+        private int _radarrId;
+        private int _fileId;
+        private int _tvdb = 1000;
+
+        public WorldBuilder(int seed) => Seed = seed;
+
+        public int Seed { get; }
+
+        public FakeWorld World { get; } = new();
+
+        public record ShowRef(string Id, string Name, string Status, int? SonarrId, List<(string Id, int Number)> Seasons, List<FakeWorld.Ep> Episodes, string[] JellyfinTags, string[] SonarrTags);
+
+        public record MovieRef(string Id, string Name, int? RadarrId, string[] JellyfinTags);
+
+        private static string NewId() => Guid.NewGuid().ToString("N");
+
+        public string User(string id, string name)
+        {
+            World.Users.Add((id, name));
+            return id;
+        }
+
+        public ShowRef Show(string name, string status, int[] eps, bool inSonarr, int gbPerFile, bool extraFile = false, string[]? sonarrTags = null, string[]? jellyfinTags = null)
+        {
+            var show = new FakeWorld.Show(NewId(), name, status, ++_tvdb, new(), (jellyfinTags ?? Array.Empty<string>()).ToList());
+            var episodes = new List<FakeWorld.Ep>();
+            for (var s = 1; s <= eps.Length; s++)
+            {
+                var seasonId = NewId();
+                show.Seasons.Add((seasonId, s));
+                for (var e = 1; e <= eps[s - 1]; e++)
+                {
+                    var ep = new FakeWorld.Ep(NewId(), show.Id, seasonId, s, e);
+                    World.Episodes.Add(ep);
+                    episodes.Add(ep);
+                }
+            }
+
+            World.Shows.Add(show);
+            int? sid = null;
+            if (inSonarr)
+            {
+                sid = ++_sonarrId;
+                var tagIds = (sonarrTags ?? Array.Empty<string>()).Select(t =>
+                {
+                    var existing = World.SonarrTags.FirstOrDefault(x => x.Value == t).Key;
+                    if (existing == 0)
+                    {
+                        existing = World.SonarrTags.Count + 1;
+                        World.SonarrTags[existing] = t;
+                    }
+
+                    return (JsonNode)existing;
+                }).ToArray();
+                World.SonarrSeries[sid.Value] = new JsonObject
+                {
+                    ["id"] = sid, ["title"] = name, ["tvdbId"] = show.Tvdb, ["monitored"] = true, ["tags"] = new JsonArray(tagIds),
+                    ["seasons"] = new JsonArray(Enumerable.Range(0, eps.Length + 1).Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["monitored"] = n > 0 }).ToArray()),
+                };
+                for (var s = 1; s <= eps.Length; s++)
+                {
+                    var count = eps[s - 1] + (extraFile && s == eps.Length ? 1 : 0);
+                    for (var e = 0; e < count; e++)
+                    {
+                        World.EpisodeFiles.Add((++_fileId, sid.Value, s, gbPerFile * GB));
+                    }
+                }
+            }
+
+            return new ShowRef(show.Id, name, status, sid, show.Seasons, episodes, jellyfinTags ?? Array.Empty<string>(), inSonarr ? sonarrTags ?? Array.Empty<string>() : Array.Empty<string>());
+        }
+
+        public MovieRef Movie(string name, bool inRadarr, int gb, string[]? jellyfinTags = null)
+        {
+            var m = new FakeWorld.Movie(NewId(), name, 2020, ++_tvdb, (jellyfinTags ?? Array.Empty<string>()).ToList());
+            World.Movies.Add(m);
+            int? rid = null;
+            if (inRadarr)
+            {
+                rid = ++_radarrId;
+                World.RadarrMovies[rid.Value] = new JsonObject
+                {
+                    ["id"] = rid, ["title"] = name, ["tmdbId"] = m.Tmdb, ["monitored"] = true, ["hasFile"] = true, ["tags"] = new JsonArray(),
+                    ["movieFile"] = new JsonObject { ["id"] = 5000 + rid, ["size"] = gb * GB },
+                };
+            }
+
+            return new MovieRef(m.Id, name, rid, jellyfinTags ?? Array.Empty<string>());
+        }
+
+        public void Watch(string user, IEnumerable<FakeWorld.Ep> eps, int daysAgo)
+        {
+            foreach (var e in eps)
+            {
+                World.UserData[(user, e.Id)] = (true, 0, _now.AddDays(-daysAgo).AddMinutes(-60 + e.Number));
+            }
+        }
+
+        public void WatchAll(string user, ShowRef show, int daysAgo) => Watch(user, show.Episodes, daysAgo);
+
+        public void Partial(string user, FakeWorld.Ep ep, int daysAgo) => World.UserData[(user, ep.Id)] = (false, 6_000_000_000, _now.AddDays(-daysAgo));
+
+        public void WatchMovie(string user, MovieRef m, bool played, int daysAgo) =>
+            World.UserData[(user, m.Id)] = (played, played ? 0 : 20_000_000_000, _now.AddDays(-daysAgo));
+    }
+}
