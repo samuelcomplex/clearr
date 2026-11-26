@@ -8,6 +8,10 @@ using Clearr.Storage;
 var builder = WebApplication.CreateBuilder(args);
 var startupPaths = new ConfigPaths();
 startupPaths.RestrictSecrets();
+var settingsStore = new SettingsStore(startupPaths);
+var fileLogs = new FileLoggerProvider(startupPaths.File("logs"), () => settingsStore.Get().DebugLogging);
+builder.Logging.AddProvider(fileLogs);
+builder.Logging.AddFilter<FileLoggerProvider>((_, _) => true); // the file logger applies its own levels
 var https = new HttpsState();
 
 // HTTP on $CLEARR_PORT (default 8585); HTTPS on the configured port when enabled in Settings.
@@ -15,7 +19,7 @@ var https = new HttpsState();
 if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
     var httpPort = int.TryParse(Environment.GetEnvironmentVariable("CLEARR_PORT"), out var p) ? p : 8585;
-    var startupSettings = new SettingsStore(startupPaths).Get();
+    var startupSettings = settingsStore.Get();
     builder.WebHost.ConfigureKestrel(k =>
     {
         k.Limits.MaxRequestBodySize = 1024 * 1024; // settings and keeps are tiny
@@ -46,7 +50,8 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddHttpClient("clearr");
 builder.Services.AddSingleton(startupPaths);
 builder.Services.AddSingleton(https);
-builder.Services.AddSingleton<SettingsStore>();
+builder.Services.AddSingleton(settingsStore);
+builder.Services.AddSingleton(fileLogs);
 builder.Services.AddSingleton<KeepStore>();
 builder.Services.AddSingleton<HistoryStore>();
 builder.Services.AddSingleton<AuthService>();
@@ -64,6 +69,17 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<Scheduler>());
 
 var app = builder.Build();
 _ = app.Services.GetRequiredService<AuthService>(); // creates api.key and session.key at startup
+var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Clearr.Startup");
+startupLog.LogInformation("Clearr {Version} starting; config in {Config}, running as {User}", typeof(Program).Assembly.GetName().Version?.ToString(3), startupPaths.Root, Environment.UserName);
+if (settingsStore.Notice is string notice)
+{
+    startupLog.LogWarning("{Notice}", notice);
+}
+
+if (https.Error != null)
+{
+    startupLog.LogError("{Error}", https.Error);
+}
 var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
 app.Use(async (ctx, next) =>
@@ -107,6 +123,7 @@ api.MapGet("/status", (HttpContext ctx, AuthService auth, SettingsStore st, Sche
         nextRun = sch.NextRun(s),
         lastRunAt = sch.LastRunAt,
         lastRunSummary = sch.LastRunSummary,
+        notice = st.Notice,
         https = new { active = hs.ActivePort.HasValue, port = hs.ActivePort, certificate = hs.Certificate, error = hs.Error, restartNeeded = st.Get().Https.Enabled != hs.ActivePort.HasValue || (hs.ActivePort.HasValue && st.Get().Https.Port != hs.ActivePort) },
     });
 });
@@ -283,6 +300,19 @@ api.MapPost("/restart", (IHostApplicationLifetime life) =>
 });
 
 api.MapGet("/history", (ClearrEngine svc) => Results.Ok(svc.History()));
+
+api.MapGet("/logs", (int? lines, FileLoggerProvider logs) => Results.Ok(LogFiles.List(logs, lines ?? 500)));
+
+api.MapGet("/logs/{file}", (string file, FileLoggerProvider logs) =>
+{
+    if (!FileLoggerProvider.IsLogFileName(file) || !File.Exists(Path.Combine(logs.Directory, file)))
+    {
+        return Results.NotFound();
+    }
+
+    var stream = new FileStream(Path.Combine(logs.Directory, file), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+    return Results.File(stream, "text/plain; charset=utf-8", file);
+});
 
 api.MapPost("/keep", async (HttpContext ctx, ClearrEngine svc, CancellationToken ct) =>
 {

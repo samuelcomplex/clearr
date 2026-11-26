@@ -127,6 +127,12 @@ public sealed class ClearrEngine : IDisposable
         }
 
         var report = Analyzer.Build(lib, s, _keep.Contains, DateTime.UtcNow, _direct != null);
+        foreach (var w in report.Warnings)
+        {
+            _log.LogWarning("{Warning}", w);
+        }
+
+        _log.LogDebug("Report: {Shows} shows, {Movies} movies, {Users} tracked users", report.Shows.Count, report.Movies.Count, report.TrackedUsers.Count);
         return new Built(lib, report, sonarr, radarr);
     }
 
@@ -393,6 +399,19 @@ public sealed class ClearrEngine : IDisposable
                 _history.Add(result.Actions);
             }
 
+            foreach (var a in result.Actions)
+            {
+                _log.LogDebug("{Action} {Kind} {Title} {Season} ({Bytes} bytes): {Detail}", a.Action, a.Kind, a.Title, a.SeasonName, a.Bytes, a.Detail);
+            }
+
+            _log.LogInformation(
+                "{Run} finished: {Deleted} deleted, {Would} would be removed, {Skipped} held back, {Failed} failed, {Gb:0.0} GB",
+                dryRun ? "Preview" : "Cleanup",
+                result.Actions.Count(a => a.Action == "Deleted"),
+                result.Actions.Count(a => a.Action == "WouldDelete"),
+                result.Actions.Count(a => a.Action == "Skipped"),
+                result.Actions.Count(a => a.Action == "Failed"),
+                result.TotalBytes / 1073741824.0);
             return result;
         }
         finally

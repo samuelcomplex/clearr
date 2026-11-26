@@ -312,6 +312,10 @@ var stj = (await http.GetFromJsonAsync<JsonObject>("/api/status"))!;
 Expect(stj["https"]!["active"]!.GetValue<bool>() && !stj["https"]!["restartNeeded"]!.GetValue<bool>(), "Status reports HTTPS active, no restart needed");
 var html = await http.GetStringAsync("/");
 Expect(html.Contains("<title>Clearr</title>"), "Web UI served");
+await Task.Delay(1500); // let the log writer catch up
+var logsJson = (await http.GetFromJsonAsync<JsonObject>("/api/logs"))!;
+Expect(logsJson["lines"]!.AsArray().Any(l => l!.GetValue<string>().Contains("|Info|Startup|Clearr ")) && logsJson["files"]!.AsArray().Any(f => f!["name"]!.GetValue<string>() == "clearr.txt"), "Logs page: startup line written to /config/logs/clearr.txt");
+Expect((await http.GetAsync("/api/logs/clearr.txt")).IsSuccessStatusCode && (await http.GetAsync("/api/logs/..%2Fsettings.json")).StatusCode == HttpStatusCode.NotFound && (await http.GetAsync("/api/logs/api.key")).StatusCode == HttpStatusCode.NotFound, "Log download works, and can't reach other files");
 var rep = await http.GetAsync("/api/report");
 Expect(rep.IsSuccessStatusCode, "No password: API open");
 var rjson = JsonNode.Parse(await rep.Content.ReadAsStringAsync());
@@ -392,6 +396,7 @@ Expect(Clearr.Api.Security.Check(From("203.0.113.9", "/api/report"), lanAuth) is
 Expect(Clearr.Api.Security.Check(From("203.0.113.9", "/api/status"), lanAuth) == null, "No password: status stays reachable so the page can explain");
 
 fails += await SafetyTests.RunAsync();
+fails += await StorageTests.RunAsync();
 await fake.StopAsync();
 Console.WriteLine(fails == 0 ? "\nALL PASSED" : $"\n{fails} FAILED");
 try { Directory.Delete(tmp, true); } catch { }

@@ -6,7 +6,7 @@
  *       api: function (path, method, body) { return Promise<json> },   // rejects with Error (.status, .body)
  *       onStatus: function (status) {}                                  // optional
  *   });
- *   ui.show('shows' | 'movies' | 'history' | 'settings');
+ *   ui.show('shows' | 'movies' | 'history' | 'settings' | 'logs');   // logs: app only
  */
 (function () {
     'use strict';
@@ -49,6 +49,11 @@
 
             '<section class="cl-page" data-page="history"><h1>History</h1><div data-el="history"></div></section>' +
 
+            (app ? '<section class="cl-page" data-page="logs"><h1>Logs</h1>' +
+                '<div class="cl-toolbar"><button class="cl-btn" data-el="refreshLogs">Refresh</button><span class="cl-muted cl-small" data-el="logFiles"></span></div>' +
+                '<p class="cl-hint">Newest first. Turn on <b>Debug logging</b> in Settings to see every decision; attach the files when reporting a problem.</p>' +
+                '<div class="cl-log" data-el="log"></div></section>' : '') +
+
             '<section class="cl-page" data-page="settings"><h1>Settings</h1>' +
             '<form class="cl-settings" data-el="form" autocomplete="off">' +
             '<h2>Connections</h2>' +
@@ -62,7 +67,8 @@
             '<h2>Cleanup</h2>' +
             '<label>Cleanup mode<select name="mode"><option value="Off">Off – only track and flag</option><option value="DryRun">Dry run – log what would be removed</option><option value="Delete">Delete – remove files</option></select>' +
             '<span class="cl-hint">Applies to everything: the daily run and the "Delete eligible now" button. Nothing is ever removed unless this is Delete.</span></label>' +
-            (app ? '<label>Daily run at<input name="scheduleTime" type="time"><span class="cl-hint">Container time zone (set TZ in Docker).</span></label>'
+            (app ? '<label>Daily run at<input name="scheduleTime" type="time"><span class="cl-hint">Container time zone (set TZ in Docker).</span></label>' +
+                '<label class="cl-check"><input type="checkbox" name="debugLogging"> Debug logging</label><span class="cl-hint">Writes every decision to the log files (Logs page). Leave off unless you\'re tracking down a problem.</span>'
                  : '<p class="cl-hint">The daily run is a Jellyfin scheduled task: <b>Dashboard → Scheduled Tasks → Clearr</b>.</p>') +
             '<label>Max GB removed per run<input name="maxDeleteGbPerRun" type="number" min="0"><span class="cl-hint">0 = no limit. Anything over the limit waits for the next run.</span></label>' +
             '<label>Grace period (days after the last viewer finished)<input name="graceDays" type="number" min="0"></label>' +
@@ -127,6 +133,9 @@
             if (!s.configured) {
                 banner.innerHTML = 'Welcome to Clearr. Start by connecting <b>' + (host === 'app' ? 'Jellyfin' : 'Sonarr') + '</b> (and Sonarr/Radarr) in <a href="#" data-goto="settings">Settings</a>.';
                 banner.classList.remove('cl-hidden');
+            } else if (s.notice) {
+                banner.textContent = s.notice;
+                banner.classList.remove('cl-hidden');
             } else banner.classList.add('cl-hidden');
             el('deleteNow').classList.toggle('cl-hidden', s.mode !== 'Delete');
             el('modeNote').innerHTML = '<span class="cl-mode cl-mode-' + s.mode + '">' + modeLabel(s.mode) + '</span> ' + (s.mode === 'Delete'
@@ -141,7 +150,8 @@
 
         // ------------------------------------------------------------ pages
         function show(page) {
-            if (['shows', 'movies', 'history', 'settings'].indexOf(page) < 0) page = 'shows';
+            var pages = host === 'app' ? ['shows', 'movies', 'history', 'settings', 'logs'] : ['shows', 'movies', 'history', 'settings'];
+            if (pages.indexOf(page) < 0) page = 'shows';
             state.page = page;
             all('.cl-page').forEach(function (p) {
                 var name = p.getAttribute('data-page');
@@ -155,6 +165,7 @@
                     if (state.report) renderLibrary(); else loadReport();
                 }
                 if (page === 'history') loadHistory();
+                if (page === 'logs') loadLogs();
                 if (page === 'settings') loadSettings();
             });
         }
@@ -332,6 +343,22 @@
                     }).join('') + '</tbody></table>';
             }).catch(function (e) { el('history').textContent = e.message; });
         }
+
+        // ------------------------------------------------------------ logs (app only)
+        function loadLogs() {
+            api('logs?lines=1000').then(function (r) {
+                el('logFiles').innerHTML = r.files.length ? 'Download: ' + r.files.map(function (f) {
+                    return '<a href="api/logs/' + encodeURIComponent(f.name) + '" download>' + esc(f.name) + '</a> (' + fmtSize(f.size) + ')';
+                }).join(' · ') : '';
+                el('log').innerHTML = r.lines.length ? r.lines.map(function (line) {
+                    var p = line.split('|');
+                    if (p.length < 4) return '<div class="cl-log-more">' + esc(line) + '</div>';
+                    return '<div class="cl-log-' + esc(p[1]) + '"><span class="cl-log-time">' + esc(p[0]) + '</span> <b>' + esc(p[1]) + '</b> <span class="cl-muted">' + esc(p[2]) + '</span> ' + esc(p.slice(3).join('|')) + '</div>';
+                }).join('') : '<p class="cl-muted">No log entries yet.</p>';
+            }).catch(function (e) { el('log').textContent = e.message; });
+        }
+
+        if (host === 'app') el('refreshLogs').addEventListener('click', loadLogs);
 
         // ------------------------------------------------------------ settings
         function getPath(o, p) { return p.split('.').reduce(function (a, k) { return a == null ? a : a[k]; }, o); }

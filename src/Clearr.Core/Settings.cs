@@ -33,6 +33,12 @@ public class HttpsSettings
 
 public class ClearrSettings
 {
+    /// <summary>Bump when the settings format changes, and add a step to <see cref="Storage.SettingsMigrations"/>.</summary>
+    public const int CurrentSchema = 1;
+
+    /// <summary>Format version of the saved file (0 = written before versioning existed).</summary>
+    public int SchemaVersion { get; set; } = CurrentSchema;
+
     // ---- Connections ----
     public ConnectionSettings Jellyfin { get; set; } = new();
     public ConnectionSettings Sonarr { get; set; } = new();
@@ -52,6 +58,9 @@ public class ClearrSettings
     /// <summary>Local time of day for the daily run, "HH:mm".</summary>
     public string ScheduleTime { get; set; } = "04:00";
     public bool RefreshJellyfinAfterCleanup { get; set; } = true;
+
+    /// <summary>App only: also write Debug-level detail (every decision) to the log files.</summary>
+    public bool DebugLogging { get; set; }
 
     /// <summary>
     /// Plugin only: items Sonarr/Radarr don't manage may be deleted directly through Jellyfin.

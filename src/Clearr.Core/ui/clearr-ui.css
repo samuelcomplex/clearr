@@ -91,3 +91,11 @@
 .clearr .cl-users label { margin-bottom: 6px; }
 .clearr .cl-save-row { position: sticky; bottom: 0; background: var(--cl-bg, #1f1f1f); padding: 14px 0; border-top: 1px solid var(--cl-border); margin-top: 20px; display: flex; gap: 12px; align-items: center; }
 .clearr[data-host=plugin] .cl-save-row { position: static; background: transparent; }
+
+/* logs */
+.clearr .cl-log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; background: #111; border: 1px solid #333; border-radius: 6px; padding: 10px 12px; max-height: 70vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.clearr .cl-log-time { color: var(--cl-muted); }
+.clearr .cl-log-Warn b { color: #e0b341; }
+.clearr .cl-log-Error b, .clearr .cl-log-Fatal b { color: #ef6b6b; }
+.clearr .cl-log-Debug { opacity: .75; }
+.clearr .cl-log-more { color: var(--cl-muted); padding-left: 2em; }

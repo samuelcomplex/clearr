@@ -90,26 +90,49 @@ internal static class AtomicFile
     }
 }
 
+/// <summary>
+/// Upgrades settings saved by older versions, one step at a time.
+/// To change the format: bump <see cref="ClearrSettings.CurrentSchema"/> and add the step that turns version N-1 into N.
+/// </summary>
+public static class SettingsMigrations
+{
+    private static readonly Dictionary<int, Action<System.Text.Json.Nodes.JsonObject>> Steps = new()
+    {
+        // 0 -> 1: versioning introduced; the format itself didn't change.
+        [1] = _ => { },
+    };
+
+    public static void Upgrade(System.Text.Json.Nodes.JsonObject json, int from)
+    {
+        for (var v = from + 1; v <= ClearrSettings.CurrentSchema; v++)
+        {
+            Steps[v](json);
+            json["schemaVersion"] = v;
+        }
+    }
+}
+
 public class SettingsStore
 {
     private readonly object _lock = new();
+    private readonly ConfigPaths _paths;
     private readonly string _path;
     private ClearrSettings? _cached;
 
-    public SettingsStore(ConfigPaths paths) => _path = paths.File("settings.json");
+    public SettingsStore(ConfigPaths paths)
+    {
+        _paths = paths;
+        _path = paths.File("settings.json");
+    }
+
+    /// <summary>Something worth telling the user about the last load (an upgrade, a broken file).</summary>
+    public string? Notice { get; private set; }
 
     public ClearrSettings Get()
     {
         lock (_lock)
         {
-            if (_cached != null)
-            {
-                return Clone(_cached);
-            }
-
-            _cached = System.IO.File.Exists(_path)
-                ? JsonSerializer.Deserialize<ClearrSettings>(System.IO.File.ReadAllText(_path), Json.Options) ?? new()
-                : new ClearrSettings();
+            _cached ??= Load();
             return Clone(_cached);
         }
     }
@@ -118,9 +141,64 @@ public class SettingsStore
     {
         lock (_lock)
         {
+            s.SchemaVersion = ClearrSettings.CurrentSchema;
             AtomicFile.Write(_path, JsonSerializer.Serialize(s, Json.Options));
             _cached = Clone(s);
         }
+    }
+
+    private ClearrSettings Load()
+    {
+        if (!System.IO.File.Exists(_path))
+        {
+            return new ClearrSettings();
+        }
+
+        var text = System.IO.File.ReadAllText(_path);
+        System.Text.Json.Nodes.JsonObject json;
+        try
+        {
+            json = System.Text.Json.Nodes.JsonNode.Parse(text) as System.Text.Json.Nodes.JsonObject ?? throw new JsonException("not a JSON object");
+        }
+        catch (JsonException ex)
+        {
+            // Never crash-loop on a damaged file: keep it for inspection and start from the (safe, Dry run) defaults.
+            var broken = _paths.File($"settings.broken-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json");
+            System.IO.File.Move(_path, broken);
+            SecureFile.Restrict(broken);
+            Notice = $"settings.json couldn't be read ({ex.Message}); it was moved to {Path.GetFileName(broken)} and Clearr started with default settings (Dry run).";
+            return new ClearrSettings();
+        }
+
+        var version = json.TryGetPropertyValue("schemaVersion", out var v) && v is not null ? v.GetValue<int>() : 0;
+        if (version < ClearrSettings.CurrentSchema)
+        {
+            var backup = _paths.File($"settings.v{version}.bak.json");
+            if (!System.IO.File.Exists(backup))
+            {
+                SecureFile.WriteAllText(backup, text);
+            }
+
+            SettingsMigrations.Upgrade(json, version);
+            var upgraded = json.Deserialize<ClearrSettings>(Json.Options) ?? new();
+            AtomicFile.Write(_path, JsonSerializer.Serialize(upgraded, Json.Options));
+            Notice = $"Settings upgraded from format {version} to {ClearrSettings.CurrentSchema}; the old file is kept as {Path.GetFileName(backup)}.";
+            return upgraded;
+        }
+
+        if (version > ClearrSettings.CurrentSchema)
+        {
+            // Written by a newer Clearr (downgrade): keep a copy, since saving here would drop the newer fields.
+            var backup = _paths.File($"settings.v{version}.bak.json");
+            if (!System.IO.File.Exists(backup))
+            {
+                SecureFile.WriteAllText(backup, text);
+            }
+
+            Notice = $"These settings were saved by a newer Clearr (format {version}); a copy is kept as {Path.GetFileName(backup)}.";
+        }
+
+        return json.Deserialize<ClearrSettings>(Json.Options) ?? new();
     }
 
     private static ClearrSettings Clone(ClearrSettings s) =>
