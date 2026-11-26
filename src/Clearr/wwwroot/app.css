@@ -120,3 +120,6 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .login-box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 28px; width: 300px; display: flex; flex-direction: column; gap: 12px; text-align: center; }
 .login-box h1 { margin: 0; }
 .login-logo { width: 56px; height: 56px; margin: 0 auto; }
+
+.coffee { display: inline-block; align-self: flex-start; margin-top: 6px; padding: 4px 10px; border-radius: 6px; background: #ffdd00; color: #000; font-size: 12px; font-weight: 600; }
+.coffee:hover { background: #ffe94d; }

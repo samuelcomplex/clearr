@@ -343,5 +343,10 @@
         }).catch(function (err) { $('#saveMsg').textContent = err.message; $('#saveMsg').className = 'error-text'; });
     });
 
+    // Optional support link: set "buyMeACoffee" in support.json to show it.
+    fetch('support.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
+        if (j && j.buyMeACoffee) { var a = $('#coffee'); a.href = 'https://buymeacoffee.com/' + encodeURIComponent(j.buyMeACoffee); a.classList.remove('hidden'); }
+    }).catch(function () {});
+
     boot();
 })();
