@@ -90,12 +90,20 @@ public static class FakeServers
 
             object EpDto(FakeWorld.Ep e) => new
             {
-                Id = e.Id, SeriesId = e.SeriesId, SeasonId = e.SeasonId, ParentIndexNumber = e.Season, IndexNumber = e.Number,
+                Id = e.Id,
+                SeriesId = e.SeriesId,
+                SeasonId = e.SeasonId,
+                ParentIndexNumber = e.Season,
+                IndexNumber = e.Number,
                 UserData = user.Length > 0 && w.UserData.TryGetValue((user, e.Id), out var d) ? new { Played = d.Played, PlaybackPositionTicks = d.Ticks, LastPlayedDate = d.Last.ToString("o") } : null,
             };
             object MovieDto(FakeWorld.Movie m) => new
             {
-                Id = m.Id, Name = m.Name, ProductionYear = m.Year, Tags = m.Tags, ProviderIds = new Dictionary<string, string> { ["Tmdb"] = m.Tmdb.ToString() },
+                Id = m.Id,
+                Name = m.Name,
+                ProductionYear = m.Year,
+                Tags = m.Tags,
+                ProviderIds = new Dictionary<string, string> { ["Tmdb"] = m.Tmdb.ToString() },
                 UserData = user.Length > 0 && w.UserData.TryGetValue((user, m.Id), out var d) ? new { Played = d.Played, PlaybackPositionTicks = d.Ticks, LastPlayedDate = d.Last.ToString("o") } : null,
             };
 

@@ -7,6 +7,7 @@ using Clearr.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 var startupPaths = new ConfigPaths();
+startupPaths.RestrictSecrets();
 var https = new HttpsState();
 
 // HTTP on $CLEARR_PORT (default 8585); HTTPS on the configured port when enabled in Settings.
@@ -17,6 +18,7 @@ if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
     var startupSettings = new SettingsStore(startupPaths).Get();
     builder.WebHost.ConfigureKestrel(k =>
     {
+        k.Limits.MaxRequestBodySize = 1024 * 1024; // settings and keeps are tiny
         k.ListenAnyIP(httpPort);
         if (startupSettings.Https.Enabled)
         {
@@ -48,6 +50,7 @@ builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<KeepStore>();
 builder.Services.AddSingleton<HistoryStore>();
 builder.Services.AddSingleton<AuthService>();
+builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<ILibrarySource>(sp => new JellyfinApiSource(sp.GetRequiredService<IHttpClientFactory>(), sp.GetRequiredService<SettingsStore>().Get));
 builder.Services.AddSingleton(sp => new ClearrEngine(
     sp.GetRequiredService<IHttpClientFactory>(),
@@ -62,23 +65,22 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<Scheduler>());
 var app = builder.Build();
 var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
-// Everything under /api needs a session (if a password is set), except login and status.
 app.Use(async (ctx, next) =>
 {
-    var path = ctx.Request.Path.Value ?? "";
-    var open = path is "/api/status" or "/api/login" or "/ping";
-    if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) && !open && !ctx.RequestServices.GetRequiredService<AuthService>().IsAuthenticated(ctx))
+    Security.AddHeaders(ctx);
+    if ((ctx.Request.Path.Value ?? "").StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+        && Security.Check(ctx, ctx.RequestServices.GetRequiredService<AuthService>()) is var (status, error))
     {
-        ctx.Response.StatusCode = 401;
-        await ctx.Response.WriteAsJsonAsync(new { error = "Sign in required" });
+        ctx.Response.StatusCode = status;
+        await ctx.Response.WriteAsJsonAsync(new { error });
         return;
     }
 
     await next();
 });
+
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 app.MapGet("/ping", () => "ok");
 
@@ -108,15 +110,23 @@ api.MapGet("/status", (HttpContext ctx, AuthService auth, SettingsStore st, Sche
     });
 });
 
-api.MapPost("/login", async (HttpContext ctx, AuthService auth) =>
+api.MapPost("/login", async (HttpContext ctx, AuthService auth, LoginThrottle throttle) =>
 {
+    var ip = ctx.Connection.RemoteIpAddress;
+    if (throttle.LockedFor(ip) is TimeSpan wait)
+    {
+        return Results.Json(new { ok = false, error = $"Too many wrong passwords. Try again in {Math.Ceiling(wait.TotalMinutes)} minutes." }, statusCode: 429);
+    }
+
     var body = await JsonNode.ParseAsync(ctx.Request.Body);
     if (!auth.PasswordRequired || auth.Verify(body?["password"]?.GetValue<string>() ?? ""))
     {
+        throttle.Succeeded(ip);
         ctx.Response.Cookies.Append(AuthService.Cookie, auth.IssueSession(), new CookieOptions { HttpOnly = true, Secure = ctx.Request.IsHttps, SameSite = SameSiteMode.Strict, Expires = DateTimeOffset.UtcNow.AddDays(30) });
         return Results.Ok(new { ok = true });
     }
 
+    throttle.Failed(ip);
     await Task.Delay(1000); // slow down guessing
     return Results.Json(new { ok = false, error = "Wrong password" }, statusCode: 401);
 });
@@ -291,11 +301,4 @@ app.Run();
 
 public partial class Program
 {
-}
-
-public class HttpsState
-{
-    public int? ActivePort { get; set; }
-    public string? Certificate { get; set; }
-    public string? Error { get; set; }
 }

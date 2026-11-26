@@ -1,0 +1,62 @@
+name: Lint
+
+# Code quality gate: analyzer warnings fail the build, formatting must match .editorconfig,
+# and the JavaScript, Dockerfile and workflows are linted.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Build with warnings as errors
+        run: |
+          for p in src/Clearr tests/Clearr.Tests tests/Integration tools/Demo; do
+            dotnet build "$p" -p:ContinuousIntegrationBuild=true -nologo
+          done
+      - name: Formatting
+        run: |
+          for p in src/Clearr tests/Clearr.Tests tests/Integration tools/Demo; do
+            dotnet format "$p" --verify-no-changes
+          done
+      - name: Vulnerable NuGet packages
+        run: |
+          dotnet list src/Clearr package --vulnerable --include-transitive | tee vuln.txt
+          if grep -q "has the following vulnerable packages" vuln.txt; then exit 1; fi
+
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx eslint --max-warnings 0
+
+  dockerfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color

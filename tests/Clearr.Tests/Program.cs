@@ -56,7 +56,11 @@ FakeWorld.Show AddShow(string name, string status, int tvdb, int[] eps, int? son
         }).ToArray();
         w.SonarrSeries[sid] = new JsonObject
         {
-            ["id"] = sid, ["title"] = name, ["tvdbId"] = tvdb, ["monitored"] = true, ["tags"] = new JsonArray(tagIds),
+            ["id"] = sid,
+            ["title"] = name,
+            ["tvdbId"] = tvdb,
+            ["monitored"] = true,
+            ["tags"] = new JsonArray(tagIds),
             ["seasons"] = new JsonArray(Enumerable.Range(0, eps.Length + 1).Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["monitored"] = n > 0 }).ToArray()),
         };
         for (var s = 1; s <= eps.Length; s++)
@@ -105,7 +109,12 @@ void AddMovie(string name, int tmdb, int? radarrId, long size, string[]? tags = 
     {
         w.RadarrMovies[rid] = new JsonObject
         {
-            ["id"] = rid, ["title"] = name, ["tmdbId"] = tmdb, ["monitored"] = true, ["hasFile"] = true, ["tags"] = new JsonArray(),
+            ["id"] = rid,
+            ["title"] = name,
+            ["tmdbId"] = tmdb,
+            ["monitored"] = true,
+            ["hasFile"] = true,
+            ["tags"] = new JsonArray(),
             ["movieFile"] = new JsonObject { ["id"] = 1000 + rid, ["size"] = size },
         };
     }
@@ -284,6 +293,7 @@ catch (Exception ex) { Expect(ex is ArgumentException or System.Security.Cryptog
 var appThread = new Thread(() => { try { typeof(Clearr.Api.AuthService).Assembly.EntryPoint!.Invoke(null, new object[] { Array.Empty<string>() }); } catch (Exception ex) { Console.WriteLine("APP CRASHED: " + (ex.InnerException ?? ex)); } }) { IsBackground = true };
 appThread.Start();
 var http = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:16565") };
+http.DefaultRequestHeaders.Add("X-Clearr-Request", "1");
 for (var i = 0; i < 150; i++)
 {
     try { if ((await http.GetStringAsync("/ping")) == "ok") break; } catch { }
@@ -291,6 +301,12 @@ for (var i = 0; i < 150; i++)
 }
 
 var insecure = new HttpClient(new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true }) { BaseAddress = new Uri("https://127.0.0.1:16566") };
+for (var i = 0; i < 150; i++)
+{
+    try { if ((await insecure.GetStringAsync("/ping")) == "ok") break; } catch (HttpRequestException) { }
+    await Task.Delay(200);
+}
+
 Expect((await insecure.GetStringAsync("/ping")) == "ok", "HTTPS works on its own port (self-signed)");
 var stj = (await http.GetFromJsonAsync<JsonObject>("/api/status"))!;
 Expect(stj["https"]!["active"]!.GetValue<bool>() && !stj["https"]!["restartNeeded"]!.GetValue<bool>(), "Status reports HTTPS active, no restart needed");
@@ -300,6 +316,18 @@ var rep = await http.GetAsync("/api/report");
 Expect(rep.IsSuccessStatusCode, "No password: API open");
 var rjson = JsonNode.Parse(await rep.Content.ReadAsStringAsync());
 Expect(rjson!["shows"]!.AsArray().Count == 6 && rjson["shows"]![0]!["users"] != null, "Report endpoint returns camelCase shows");
+// ---------------------------------------------------------------- security
+var page = await http.GetAsync("/");
+Expect(page.Headers.TryGetValues("Content-Security-Policy", out var csp) && csp.First().Contains("frame-ancestors 'none'") && page.Headers.Contains("X-Content-Type-Options"), "Security headers sent (CSP, nosniff)");
+var bare = new HttpClient { BaseAddress = http.BaseAddress };
+var csrf = await bare.PostAsync("/api/cleanup?dryRun=false", null);
+Expect(csrf.StatusCode == HttpStatusCode.Forbidden && w.Log.Count(l => l.StartsWith("DELETE")) == 8, "Cross-site protection: a POST without Clearr's header is refused (403)");
+var foreign = new HttpRequestMessage(HttpMethod.Post, "/api/keep") { Content = JsonContent.Create(new { id = "x", kind = "show" }) };
+foreign.Headers.Add("X-Clearr-Request", "1");
+foreign.Headers.Add("Origin", "https://evil.example");
+Expect((await bare.SendAsync(foreign)).StatusCode == HttpStatusCode.Forbidden, "Cross-site protection: a request from another site's page is refused");
+Expect((await bare.GetAsync("/api/history")).IsSuccessStatusCode, "Reading still works without the header (no password set, local address)");
+
 var guard = await http.PostAsync("/api/cleanup?dryRun=false", null);
 Console.WriteLine($"  guard: {(int)guard.StatusCode} deletes={w.Log.Count(l => l.StartsWith("DELETE"))}");
 Expect(guard.StatusCode == HttpStatusCode.Conflict && w.Log.Count(l => l.StartsWith("DELETE")) == 8, "HTTP: real cleanup refused in DryRun mode (409), nothing deleted");
@@ -317,15 +345,51 @@ Expect(badPut.StatusCode == HttpStatusCode.BadRequest && (await badPut.Content.R
 var put = await http.PutAsJsonAsync("/api/settings", new JsonObject { ["settings"] = cur["settings"]!.DeepClone(), ["newPassword"] = "hunter22" });
 Expect(put.IsSuccessStatusCode, "Password set");
 var anon = new HttpClient { BaseAddress = http.BaseAddress };
+anon.DefaultRequestHeaders.Add("X-Clearr-Request", "1");
 Expect((await anon.GetAsync("/api/report")).StatusCode == HttpStatusCode.Unauthorized, "With password: API needs sign-in");
 Expect((await anon.GetAsync("/api/status")).IsSuccessStatusCode && (await anon.GetAsync("/")).IsSuccessStatusCode, "Status and UI still load for the sign-in page");
 Expect((await anon.PostAsJsonAsync("/api/login", new { password = "nope" })).StatusCode == HttpStatusCode.Unauthorized, "Wrong password rejected");
 var cookies = new CookieContainer();
 var user = new HttpClient(new HttpClientHandler { CookieContainer = cookies }) { BaseAddress = http.BaseAddress };
+user.DefaultRequestHeaders.Add("X-Clearr-Request", "1");
 Expect((await user.PostAsJsonAsync("/api/login", new { password = "hunter22" })).IsSuccessStatusCode && (await user.GetAsync("/api/history")).IsSuccessStatusCode, "Right password: signed in");
 var keyed = new HttpRequestMessage(HttpMethod.Get, "/api/history");
 keyed.Headers.Add("X-Api-Key", apiKey);
 Expect((await anon.SendAsync(keyed)).IsSuccessStatusCode, "API key header works");
+var keyedPost = new HttpRequestMessage(HttpMethod.Post, "/api/cleanup?dryRun=true");
+keyedPost.Headers.Add("X-Api-Key", apiKey);
+Expect((await bare.SendAsync(keyedPost)).IsSuccessStatusCode, "Scripts with the API key don't need Clearr's header");
+var mode = System.IO.File.GetUnixFileMode(Path.Combine(appDir, "settings.json"));
+Expect(mode == (UnixFileMode.UserRead | UnixFileMode.UserWrite) && System.IO.File.GetUnixFileMode(Path.Combine(appDir, "api.key")) == mode, "settings.json and api.key are readable by Clearr's user only (600)");
+
+// Changing the password signs out existing sessions.
+var settingsNow = (await user.GetFromJsonAsync<JsonObject>("/api/settings"))!;
+Expect((await user.PutAsJsonAsync("/api/settings", new JsonObject { ["settings"] = settingsNow["settings"]!.DeepClone(), ["newPassword"] = "correct-horse" })).IsSuccessStatusCode, "Password changed");
+Expect((await user.GetAsync("/api/history")).StatusCode == HttpStatusCode.Unauthorized, "Changing the password signs out old sessions");
+
+// Too many wrong passwords: locked out, even with the right one.
+for (var i = 0; i < 5; i++)
+{
+    await anon.PostAsJsonAsync("/api/login", new { password = "guess" + i });
+}
+
+var locked = await anon.PostAsJsonAsync("/api/login", new { password = "correct-horse" });
+Expect(locked.StatusCode == (HttpStatusCode)429, "5 wrong passwords: locked out for 10 minutes (429), even with the right one");
+
+// Local-only access while no password is set (checked directly: tests can't connect from a public address).
+var lanAuth = new Clearr.Api.AuthService(new SettingsStore(new ConfigPaths(Path.Combine(tmp, "lan"))), new ConfigPaths(Path.Combine(tmp, "lan")));
+Microsoft.AspNetCore.Http.DefaultHttpContext From(string ip, string path)
+{
+    var c = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+    c.Connection.RemoteIpAddress = IPAddress.Parse(ip);
+    c.Request.Path = path;
+    c.Request.Method = "GET";
+    return c;
+}
+
+Expect(Clearr.Api.Security.Check(From("192.168.1.20", "/api/report"), lanAuth) == null && Clearr.Api.Security.Check(From("100.101.1.2", "/api/report"), lanAuth) == null && Clearr.Api.Security.Check(From("fd00::5", "/api/report"), lanAuth) == null, "No password: LAN, Tailscale and IPv6 local addresses allowed");
+Expect(Clearr.Api.Security.Check(From("203.0.113.9", "/api/report"), lanAuth) is { Status: 401 } && Clearr.Api.Security.Check(From("::ffff:8.8.8.8", "/api/settings"), lanAuth) is { Status: 401 }, "No password: internet addresses refused");
+Expect(Clearr.Api.Security.Check(From("203.0.113.9", "/api/status"), lanAuth) == null, "No password: status stays reachable so the page can explain");
 
 fails += await SafetyTests.RunAsync();
 await fake.StopAsync();

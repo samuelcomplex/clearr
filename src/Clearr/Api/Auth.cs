@@ -20,7 +20,7 @@ public class AuthService
         var secretPath = paths.File("session.key");
         if (!File.Exists(secretPath))
         {
-            File.WriteAllBytes(secretPath, RandomNumberGenerator.GetBytes(32));
+            SecureFile.WriteAllBytes(secretPath, RandomNumberGenerator.GetBytes(32));
         }
 
         _secret = File.ReadAllBytes(secretPath);
@@ -28,7 +28,7 @@ public class AuthService
         var keyPath = paths.File("api.key");
         if (!File.Exists(keyPath))
         {
-            File.WriteAllText(keyPath, Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant());
+            SecureFile.WriteAllText(keyPath, Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant());
         }
 
         ApiKey = File.ReadAllText(keyPath).Trim();
@@ -65,12 +65,7 @@ public class AuthService
 
     public bool IsAuthenticated(HttpContext ctx)
     {
-        if (!PasswordRequired)
-        {
-            return true;
-        }
-
-        if (ctx.Request.Headers.TryGetValue("X-Api-Key", out var key) && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(key.ToString()), Encoding.UTF8.GetBytes(ApiKey)))
+        if (!PasswordRequired || HasValidApiKey(ctx))
         {
             return true;
         }
@@ -87,5 +82,11 @@ public class AuthService
             && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(c[(dot + 1)..]), Encoding.UTF8.GetBytes(Sign(exp)));
     }
 
-    private string Sign(string value) => Convert.ToHexString(HMACSHA256.HashData(_secret, Encoding.UTF8.GetBytes(value)));
+    public bool HasValidApiKey(HttpContext ctx) =>
+        ctx.Request.Headers.TryGetValue("X-Api-Key", out var key)
+        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(key.ToString()), Encoding.UTF8.GetBytes(ApiKey));
+
+    // Sessions are bound to the current password: changing or removing it signs everyone out.
+    private string Sign(string value) =>
+        Convert.ToHexString(HMACSHA256.HashData(_secret, Encoding.UTF8.GetBytes(value + "|" + _settings.Get().PasswordHash)));
 }

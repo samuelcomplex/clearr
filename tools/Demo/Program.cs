@@ -26,8 +26,15 @@ FakeWorld.Show Show(string name, string status, int[] eps, bool managed = true, 
     if (managed)
     {
         var id = sonarrId;
-        w.SonarrSeries[id] = new JsonObject { ["id"] = id, ["title"] = name, ["tvdbId"] = s.Tvdb, ["monitored"] = true, ["tags"] = new JsonArray(),
-            ["seasons"] = new JsonArray(Enumerable.Range(0, eps.Length + 1).Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["monitored"] = n > 0 }).ToArray()) };
+        w.SonarrSeries[id] = new JsonObject
+        {
+            ["id"] = id,
+            ["title"] = name,
+            ["tvdbId"] = s.Tvdb,
+            ["monitored"] = true,
+            ["tags"] = new JsonArray(),
+            ["seasons"] = new JsonArray(Enumerable.Range(0, eps.Length + 1).Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["monitored"] = n > 0 }).ToArray())
+        };
         for (var n = 1; n <= eps.Length; n++) for (var e = 0; e < eps[n - 1]; e++) w.EpisodeFiles.Add((fileId++, id, n, (long)(rnd.Next(700, 1900) * 1024L * 1024)));
     }
     sonarrId++;

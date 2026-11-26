@@ -66,7 +66,7 @@ public class JellyfinClient
             }
 
             // Group by season id; episodes without one fall back to their season number.
-            foreach (var sg in g.GroupBy(e => e.Str("SeasonId") ?? ("num:" + (e.Int("ParentIndexNumber")?.ToString() ?? "?"))))
+            foreach (var sg in g.GroupBy(e => e.Str("SeasonId") ?? ("num:" + (e.Int("ParentIndexNumber")?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?"))))
             {
                 seasonNodes.TryGetValue(sg.Key, out var sn);
                 var number = sn.Int("IndexNumber") ?? sg.First().Int("ParentIndexNumber");

@@ -31,9 +31,53 @@ public class ConfigPaths
         Directory.CreateDirectory(Root);
     }
 
+    /// <summary>Files holding API keys, the password hash or session secrets.</summary>
+    public static readonly string[] SecretFiles = { "settings.json", "api.key", "session.key", "clearr-selfsigned.pfx" };
+
+    public void RestrictSecrets()
+    {
+        foreach (var f in SecretFiles)
+        {
+            SecureFile.Restrict(File(f));
+        }
+    }
+
     public string Root { get; }
 
     public string File(string name) => Path.Combine(Root, name);
+}
+
+/// <summary>Writes files only Clearr's own user can read (they hold API keys and secrets).</summary>
+public static class SecureFile
+{
+    private const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+    public static void WriteAllText(string path, string content) => WriteAllBytes(path, System.Text.Encoding.UTF8.GetBytes(content));
+
+    public static void WriteAllBytes(string path, byte[] content)
+    {
+        var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = OwnerOnly;
+        }
+
+        using (var f = new FileStream(path, options))
+        {
+            f.Write(content);
+        }
+
+        Restrict(path);
+    }
+
+    /// <summary>Tightens a file written before this existed (older versions used the default 644).</summary>
+    public static void Restrict(string path)
+    {
+        if (!OperatingSystem.IsWindows() && System.IO.File.Exists(path) && System.IO.File.GetUnixFileMode(path) != OwnerOnly)
+        {
+            System.IO.File.SetUnixFileMode(path, OwnerOnly);
+        }
+    }
 }
 
 internal static class AtomicFile
@@ -41,7 +85,7 @@ internal static class AtomicFile
     public static void Write(string path, string content)
     {
         var tmp = path + ".tmp";
-        System.IO.File.WriteAllText(tmp, content);
+        SecureFile.WriteAllText(tmp, content);
         System.IO.File.Move(tmp, path, overwrite: true);
     }
 }

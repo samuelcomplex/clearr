@@ -519,7 +519,11 @@ internal static class SafetyTests
                 }).ToArray();
                 World.SonarrSeries[sid.Value] = new JsonObject
                 {
-                    ["id"] = sid, ["title"] = name, ["tvdbId"] = show.Tvdb, ["monitored"] = true, ["tags"] = new JsonArray(tagIds),
+                    ["id"] = sid,
+                    ["title"] = name,
+                    ["tvdbId"] = show.Tvdb,
+                    ["monitored"] = true,
+                    ["tags"] = new JsonArray(tagIds),
                     ["seasons"] = new JsonArray(Enumerable.Range(0, eps.Length + 1).Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["monitored"] = n > 0 }).ToArray()),
                 };
                 for (var s = 1; s <= eps.Length; s++)
@@ -545,7 +549,12 @@ internal static class SafetyTests
                 rid = ++_radarrId;
                 World.RadarrMovies[rid.Value] = new JsonObject
                 {
-                    ["id"] = rid, ["title"] = name, ["tmdbId"] = m.Tmdb, ["monitored"] = true, ["hasFile"] = true, ["tags"] = new JsonArray(),
+                    ["id"] = rid,
+                    ["title"] = name,
+                    ["tmdbId"] = m.Tmdb,
+                    ["monitored"] = true,
+                    ["hasFile"] = true,
+                    ["tags"] = new JsonArray(),
                     ["movieFile"] = new JsonObject { ["id"] = 5000 + rid, ["size"] = gb * GB },
                 };
             }

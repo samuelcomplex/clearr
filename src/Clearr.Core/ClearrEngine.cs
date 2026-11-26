@@ -42,7 +42,7 @@ public interface IHistoryStore
 /// Builds reports from the library + Sonarr/Radarr and carries out (or previews) cleanups.
 /// Shared by the Clearr app and the Clearr Jellyfin plugin.
 /// </summary>
-public class ClearrEngine
+public sealed class ClearrEngine : IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly IHttpClientFactory _http;
@@ -65,6 +65,8 @@ public class ClearrEngine
     }
 
     public List<HistoryEntry> History() => _history.GetAll();
+
+    public void Dispose() => _gate.Dispose();
 
     private HttpClient Http()
     {
@@ -181,7 +183,7 @@ public class ClearrEngine
 
     // ---------------------------------------------------------------- cleanup
 
-    private record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, string Reason, int? ArrId, ShowInfo? Show, RadarrMovie? Movie, DirectTarget? Direct);
+    private sealed record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, string Reason, int? ArrId, ShowInfo? Show, RadarrMovie? Movie, DirectTarget? Direct);
 
     public async Task<CleanupResult> CleanupAsync(bool dryRun, bool record, CancellationToken ct)
     {

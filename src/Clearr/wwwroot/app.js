@@ -8,7 +8,7 @@
         return fetch('api/' + path, {
             method: method || 'GET',
             credentials: 'same-origin',
-            headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+            headers: body !== undefined ? { 'Content-Type': 'application/json', 'X-Clearr-Request': '1' } : { 'X-Clearr-Request': '1' },
             body: body !== undefined ? JSON.stringify(body) : undefined
         }).then(function (r) {
             if (r.status === 401 && path !== 'login') { showLogin(); }

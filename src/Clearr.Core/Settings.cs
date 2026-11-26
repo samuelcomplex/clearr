@@ -45,7 +45,7 @@ public class ClearrSettings
     public bool DeleteMovies { get; set; } = true;
     public bool RequireEndedForShowDelete { get; set; } = true;
     public bool ProtectLatestSeasonOfContinuing { get; set; } = true;
-    public bool IncludeSpecials { get; set; } = false;
+    public bool IncludeSpecials { get; set; }
     public int GraceDays { get; set; } = 7;
     public int MaxDeleteGbPerRun { get; set; } = 50;
     public string KeepTag { get; set; } = "keep";
@@ -57,7 +57,7 @@ public class ClearrSettings
     /// Plugin only: items Sonarr/Radarr don't manage may be deleted directly through Jellyfin.
     /// Ignored by the Clearr app, which only ever removes through Sonarr/Radarr.
     /// </summary>
-    public bool AllowDirectDelete { get; set; } = false;
+    public bool AllowDirectDelete { get; set; }
 
     // ---- Flags ----
     public int InactiveDays { get; set; } = 30;

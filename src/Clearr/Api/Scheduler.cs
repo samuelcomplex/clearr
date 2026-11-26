@@ -34,13 +34,13 @@ public class Scheduler : BackgroundService
         return DateTime.Now < today && _lastRun < DateOnly.FromDateTime(DateTime.Now) ? today : today.AddDays(1);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stop)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stop.IsCancellationRequested)
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(30), stop);
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
                 var s = _settings.Get();
                 var now = DateTime.Now;
                 if (DateOnly.FromDateTime(now) > _lastRun && now.TimeOfDay >= ParseTime(s.ScheduleTime))
@@ -52,7 +52,7 @@ public class Scheduler : BackgroundService
                     }
 
                     _log.LogInformation("Scheduled cleanup ({Mode})", s.Mode);
-                    var r = await _clearr.CleanupAsync(dryRun: dry, record: true, stop);
+                    var r = await _clearr.CleanupAsync(dryRun: dry, record: true, stoppingToken);
                     LastRunAt = DateTime.UtcNow;
                     LastRunSummary = $"{(r.DryRun ? "Dry run" : "Cleanup")}: {r.Actions.Count(a => a.Action is "Deleted" or "WouldDelete")} item(s), {r.TotalBytes / 1073741824.0:0.0} GB";
                 }
@@ -70,6 +70,8 @@ public class Scheduler : BackgroundService
         }
     }
 
+    private static readonly string[] TimeFormats = { @"hh\:mm", @"h\:mm" };
+
     private static TimeSpan ParseTime(string? hhmm) =>
-        TimeSpan.TryParseExact(hhmm ?? "", new[] { @"hh\:mm", @"h\:mm" }, CultureInfo.InvariantCulture, out var t) ? t : TimeSpan.FromHours(4);
+        TimeSpan.TryParseExact(hhmm ?? "", TimeFormats, CultureInfo.InvariantCulture, out var t) ? t : TimeSpan.FromHours(4);
 }

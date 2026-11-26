@@ -73,7 +73,7 @@ public static class Certificates
         req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, false));
         req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new("1.3.6.1.5.5.7.3.1") }, false));
         using var cert = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(5));
-        File.WriteAllBytes(file, cert.Export(X509ContentType.Pfx));
+        Storage.SecureFile.WriteAllBytes(file, cert.Export(X509ContentType.Pfx));
         return X509CertificateLoader.LoadPkcs12FromFile(file, null);
     }
 }
