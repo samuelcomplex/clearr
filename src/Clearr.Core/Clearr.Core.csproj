@@ -10,6 +10,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Clearr</RootNamespace>
     <Version>0.2.0</Version>
+      <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <Copyright>Copyright (C) 2026 samuelcomplex</Copyright>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

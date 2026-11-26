@@ -7,6 +7,8 @@
     <Version>0.2.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+      <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <Copyright>Copyright (C) 2026 samuelcomplex</Copyright>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Clearr.Core/Clearr.Core.csproj" />
