@@ -160,4 +160,4 @@ dotnet run --project tools/Demo                 # demo household on http://127.0
 
 Clearr is .NET 10 / ASP.NET Core with a plain HTML/JS UI and no third-party packages. Settings, the keep list and history are JSON files in `/config`.
 
-Clearr grew out of [Watch Tracker](https://github.com/samuelcomplex/jellyfin-plugin-watchtracker), a Jellyfin plugin with the same decision logic.
+Clearr grew out of Watch Tracker, a Jellyfin plugin. That plugin is now [Clearr for Jellyfin](https://github.com/samuelcomplex/clearr-plugin): it is built from this repo's Clearr.Core, so both share the same features and updates.
