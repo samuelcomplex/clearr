@@ -24,8 +24,48 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet run --project tests/Clearr.Tests
 
+  container:
+    # Builds the image and checks it really runs: health check, PUID/PGID, owner-only secret files.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: clearr:ci
+      - name: Runs as PUID/PGID and becomes healthy
+        run: |
+          mkdir -p "$RUNNER_TEMP/cfg"
+          docker run -d --name clearr -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/cfg:/config" -p 8585:8585 clearr:ci
+          for i in $(seq 1 45); do
+            s=$(docker inspect -f '{{.State.Health.Status}}' clearr); [ "$s" = healthy ] && break; sleep 2
+          done
+          docker logs clearr
+          [ "$s" = healthy ] || { echo "not healthy: $s"; exit 1; }
+          curl -sf http://localhost:8585/ping | grep -qx ok
+          docker exec clearr sh -c 'grep -E "^(Uid|Gid):" /proc/1/status' | tee ids.txt
+          grep -qE "^Uid:\s+1234" ids.txt && grep -qE "^Gid:\s+2345" ids.txt
+          stat -c '%n %u:%g %a' "$RUNNER_TEMP"/cfg/* | tee files.txt
+          grep -q "api.key 1234:2345 600" files.txt && grep -q "session.key 1234:2345 600" files.txt
+      - name: Also runs with --user (no root at all)
+        run: |
+          mkdir -p "$RUNNER_TEMP/cfg2" && sudo chown 1500:1500 "$RUNNER_TEMP/cfg2"
+          docker run -d --name clearr2 --user 1500:1500 -v "$RUNNER_TEMP/cfg2:/config" -p 8595:8585 clearr:ci
+          for i in $(seq 1 30); do curl -sf http://localhost:8595/ping >/dev/null && break; sleep 2; done
+          curl -sf http://localhost:8595/ping | grep -qx ok
+      - name: Existing root-owned /config is fixed up
+        run: |
+          docker rm -f clearr
+          sudo chown -R 0:0 "$RUNNER_TEMP/cfg"
+          docker run -d --name clearr -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/cfg:/config" clearr:ci
+          sleep 8
+          docker logs clearr | grep -q "Setting owner of /config to 1234:2345"
+          [ "$(stat -c %u "$RUNNER_TEMP/cfg/api.key")" = 1234 ]
+
   image:
-    needs: test
+    needs: [test, container]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

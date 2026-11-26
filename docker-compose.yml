@@ -4,6 +4,8 @@ services:
     container_name: clearr
     environment:
       - TZ=Europe/Stockholm      # the daily run uses this time zone
+      - PUID=1000                # user and group Clearr runs as; files in /config
+      - PGID=1000                #   belong to them (find yours with: id)
     volumes:
       - ./clearr:/config         # settings, keep list and history
       # - /path/to/certs:/certs:ro   # only if you use your own HTTPS certificate
