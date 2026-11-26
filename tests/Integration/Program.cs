@@ -107,8 +107,16 @@ var added = await sonarr.PostAsync("api/v3/series", new StringContent(bb.ToJsonS
 if (!added.IsSuccessStatusCode) Console.WriteLine(await added.Content.ReadAsStringAsync());
 added.EnsureSuccessStatusCode();
 var seriesId = (await added.Content.ReadFromJsonAsync<JsonObject>())!["id"]!.GetValue<int>();
+var diag = 0;
 await Poll("Sonarr to import the 3 episode files", async () =>
 {
+    if (diag++ % 4 == 1)
+    {
+        var sp = (await sonarr.GetFromJsonAsync<JsonObject>($"api/v3/series/{seriesId}"))!["path"];
+        var mi = await sonarr.GetStringAsync($"api/v3/manualimport?folder={Uri.EscapeDataString(sp!.GetValue<string>())}&seriesId={seriesId}&filterExistingFiles=false");
+        Console.WriteLine($"  sonarr path={sp} manualimport={(mi.Length > 1500 ? mi[..1500] : mi)}");
+    }
+
     await sonarr.PostAsJsonAsync("api/v3/command", new { name = "RescanSeries", seriesId });
     await Task.Delay(5000);
     var files = await sonarr.GetFromJsonAsync<JsonArray>($"api/v3/episodefile?seriesId={seriesId}");
@@ -127,8 +135,16 @@ var addedMovie = await radarr.PostAsync("api/v3/movie", new StringContent(matrix
 if (!addedMovie.IsSuccessStatusCode) Console.WriteLine(await addedMovie.Content.ReadAsStringAsync());
 addedMovie.EnsureSuccessStatusCode();
 var movieId = (await addedMovie.Content.ReadFromJsonAsync<JsonObject>())!["id"]!.GetValue<int>();
+var rdiag = 0;
 await Poll("Radarr to import the movie file", async () =>
 {
+    if (rdiag++ % 4 == 1)
+    {
+        var mp = (await radarr.GetFromJsonAsync<JsonObject>($"api/v3/movie/{movieId}"))!["path"];
+        var mi = await radarr.GetStringAsync($"api/v3/manualimport?folder={Uri.EscapeDataString(mp!.GetValue<string>())}&movieId={movieId}&filterExistingFiles=false");
+        Console.WriteLine($"  radarr path={mp} manualimport={(mi.Length > 1500 ? mi[..1500] : mi)}");
+    }
+
     await radarr.PostAsJsonAsync("api/v3/command", new { name = "RescanMovie", movieId });
     await Task.Delay(5000);
     var m = await radarr.GetFromJsonAsync<JsonObject>($"api/v3/movie/{movieId}");
