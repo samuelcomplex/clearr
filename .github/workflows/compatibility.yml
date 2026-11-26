@@ -68,7 +68,7 @@ jobs:
                && curl -sf -H "X-Api-Key: $R" http://localhost:7878/api/v3/system/status >/dev/null; then break; fi
             sleep 2
           done
-          [ -n "$S" ] && [ -n "$R" ] || { docker logs sonarr | tail -50; docker logs radarr | tail -50; exit 1; }
+          if [ -z "$S" ] || [ -z "$R" ]; then docker logs sonarr | tail -50; docker logs radarr | tail -50; exit 1; fi
           echo "SONARR_API_KEY=$S" >> "$GITHUB_ENV"
           echo "RADARR_API_KEY=$R" >> "$GITHUB_ENV"
 
