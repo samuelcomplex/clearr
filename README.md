@@ -2,6 +2,7 @@
 
 [![Build](https://github.com/samuelcomplex/clearr/actions/workflows/build.yml/badge.svg)](https://github.com/samuelcomplex/clearr/actions/workflows/build.yml)
 [![Compatibility check](https://github.com/samuelcomplex/clearr/actions/workflows/compatibility.yml/badge.svg)](https://github.com/samuelcomplex/clearr/actions/workflows/compatibility.yml)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors)](https://github.com/sponsors/samuelcomplex)
 
 ![Clearr](docs/logo/banner.png)
 
@@ -161,3 +162,7 @@ dotnet run --project tools/Demo                 # demo household on http://127.0
 Clearr is .NET 10 / ASP.NET Core with a plain HTML/JS UI and no third-party packages. Settings, the keep list and history are JSON files in `/config`.
 
 Clearr grew out of Watch Tracker, a Jellyfin plugin. That plugin is now [Clearr for Jellyfin](https://github.com/samuelcomplex/clearr-plugin): it is built from this repo's Clearr.Core, so both share the same features and updates.
+
+## Support
+
+Clearr is free and always will be. If it saves you some disk space and you want to say thanks, you can [sponsor me on GitHub](https://github.com/sponsors/samuelcomplex). GitHub takes no fee on personal sponsorships, so everything goes to development.
