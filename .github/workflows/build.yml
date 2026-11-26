@@ -35,6 +35,8 @@ jobs:
           context: .
           load: true
           tags: clearr:ci
+      - name: Image size
+        run: docker image ls clearr:ci --format '{{.Repository}}:{{.Tag}} {{.Size}}'
       - name: Runs as PUID/PGID and becomes healthy
         run: |
           mkdir -p "$RUNNER_TEMP/cfg"

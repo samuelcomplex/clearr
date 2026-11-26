@@ -7,6 +7,10 @@ namespace Clearr.Clients;
 public class JellyfinClient
 {
     private const int Page = 1000;
+
+    /// <summary>Requests in flight at once: fast on big libraries, gentle on small servers.</summary>
+    private const int Parallel = 4;
+    private static readonly string[] StateFilters = { "IsPlayed", "IsResumable" };
     private readonly HttpApi _api;
 
     public JellyfinClient(HttpClient http, ConnectionSettings c)
@@ -34,13 +38,39 @@ public class JellyfinClient
 
     public async Task<LibrarySnapshot> LoadAsync(CancellationToken ct)
     {
-        var lib = new LibrarySnapshot { Users = await GetUsersAsync(ct) };
+        using var gate = new SemaphoreSlim(Parallel, Parallel);
+        var usersTask = GetUsersAsync(ct);
 
-        // Structure
-        var series = await ItemsAsync("IncludeItemTypes=Series&Fields=ProviderIds,Tags", ct);
-        var seasons = await ItemsAsync("IncludeItemTypes=Season&Fields=Tags", ct);
-        var episodes = await ItemsAsync("IncludeItemTypes=Episode&excludeLocationTypes=Virtual", ct);
-        var movies = await ItemsAsync("IncludeItemTypes=Movie&Fields=ProviderIds,Tags&excludeLocationTypes=Virtual", ct);
+        // Structure (fetched side by side)
+        var seriesTask = ItemsAsync("IncludeItemTypes=Series&Fields=ProviderIds,Tags", gate, ct);
+        var seasonsTask = ItemsAsync("IncludeItemTypes=Season&Fields=Tags", gate, ct);
+        var episodesTask = ItemsAsync("IncludeItemTypes=Episode&excludeLocationTypes=Virtual", gate, ct);
+        var moviesTask = ItemsAsync("IncludeItemTypes=Movie&Fields=ProviderIds,Tags&excludeLocationTypes=Virtual", gate, ct);
+        var structure = new Task[] { seriesTask, seasonsTask, episodesTask, moviesTask };
+        List<MediaUser> users;
+        try
+        {
+            users = await usersTask;
+        }
+        catch
+        {
+            await Task.WhenAll(structure).ContinueWith(_ => { }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            throw;
+        }
+
+        var lib = new LibrarySnapshot { Users = users };
+
+        // Per-user state: only items each user has played or partly played.
+        var stateTasks = lib.Users
+            .SelectMany(u => StateFilters.Select(filter => (User: u, Task: ItemsAsync($"userId={u.Id}&IncludeItemTypes=Episode,Movie&excludeLocationTypes=Virtual&EnableUserData=true&Filters={filter}", gate, ct))))
+            .ToList();
+
+        // Wait for everything (even after a failure), so no request outlives this call.
+        await Task.WhenAll(structure.Concat(stateTasks.Select(x => x.Task)));
+        var series = seriesTask.Result;
+        var seasons = seasonsTask.Result;
+        var episodes = episodesTask.Result;
+        var movies = moviesTask.Result;
 
         var seasonNodes = seasons.ToDictionary(s => s.Str("Id")!, s => s);
         var showById = new Dictionary<string, ShowInfo>();
@@ -96,47 +126,59 @@ public class JellyfinClient
             });
         }
 
-        // Per-user state: only items each user has played or partly played.
-        foreach (var u in lib.Users)
+        foreach (var (u, task) in stateTasks)
         {
-            foreach (var filter in new[] { "IsPlayed", "IsResumable" })
+            foreach (var it in await task)
             {
-                var items = await ItemsAsync($"userId={u.Id}&IncludeItemTypes=Episode,Movie&excludeLocationTypes=Virtual&EnableUserData=true&Filters={filter}", ct);
-                foreach (var it in items)
+                var ud = it["UserData"];
+                if (ud == null)
                 {
-                    var ud = it["UserData"];
-                    if (ud == null)
-                    {
-                        continue;
-                    }
-
-                    var id = it.Str("Id")!;
-                    if (!lib.UserData.TryGetValue(id, out var byUser))
-                    {
-                        lib.UserData[id] = byUser = new Dictionary<string, PlayState>(StringComparer.OrdinalIgnoreCase);
-                    }
-
-                    byUser[u.Id] = new PlayState(ud.Bool("Played"), ud.Long("PlaybackPositionTicks"), ud.Date("LastPlayedDate"));
+                    continue;
                 }
+
+                var id = it.Str("Id")!;
+                if (!lib.UserData.TryGetValue(id, out var byUser))
+                {
+                    lib.UserData[id] = byUser = new Dictionary<string, PlayState>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                byUser[u.Id] = new PlayState(ud.Bool("Played"), ud.Long("PlaybackPositionTicks"), ud.Date("LastPlayedDate"));
             }
         }
 
         return lib;
     }
 
-    private async Task<List<JsonNode>> ItemsAsync(string query, CancellationToken ct)
+    /// <summary>All pages of an Items query: the first page tells the total, the rest are fetched side by side.</summary>
+    private async Task<List<JsonNode>> ItemsAsync(string query, SemaphoreSlim gate, CancellationToken ct)
     {
-        var all = new List<JsonNode>();
-        for (var start = 0; ; start += Page)
+        async Task<JsonNode> PageAsync(int start)
         {
-            var page = await _api.GetAsync($"Items?Recursive=true&EnableImages=false&StartIndex={start}&Limit={Page}&{query}", ct);
-            var items = page.Arr("Items").ToList();
-            all.AddRange(items);
-            var total = page.Int("TotalRecordCount") ?? 0;
-            if (items.Count < Page || all.Count >= total)
+            await gate.WaitAsync(ct);
+            try
             {
-                return all;
+                return await _api.GetAsync($"Items?Recursive=true&EnableImages=false&EnableImageTypes=None&StartIndex={start}&Limit={Page}&{query}", ct) ?? new JsonObject();
+            }
+            finally
+            {
+                gate.Release();
             }
         }
+
+        var first = await PageAsync(0);
+        var all = first.Arr("Items").ToList();
+        var total = first.Int("TotalRecordCount") ?? 0;
+        if (all.Count < Page || all.Count >= total)
+        {
+            return all;
+        }
+
+        var rest = await Task.WhenAll(Enumerable.Range(1, (total - 1) / Page).Select(i => PageAsync(i * Page)));
+        foreach (var page in rest)
+        {
+            all.AddRange(page.Arr("Items"));
+        }
+
+        return all;
     }
 }

@@ -397,6 +397,7 @@ Expect(Clearr.Api.Security.Check(From("203.0.113.9", "/api/status"), lanAuth) ==
 
 fails += await SafetyTests.RunAsync();
 fails += await StorageTests.RunAsync();
+fails += await PerfTests.RunAsync();
 await fake.StopAsync();
 Console.WriteLine(fails == 0 ? "\nALL PASSED" : $"\n{fails} FAILED");
 try { Directory.Delete(tmp, true); } catch { }

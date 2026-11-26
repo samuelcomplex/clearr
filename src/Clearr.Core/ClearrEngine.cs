@@ -52,6 +52,7 @@ public sealed class ClearrEngine : IDisposable
     private readonly IHistoryStore _history;
     private readonly ILogger _log;
     private readonly IDirectDeleter? _direct;
+    private (DateTime At, Built Built)? _last;
 
     public ClearrEngine(IHttpClientFactory http, Func<ClearrSettings> settings, ILibrarySource source, IKeepStore keep, IHistoryStore history, ILogger log, IDirectDeleter? direct = null)
     {
@@ -133,7 +134,9 @@ public sealed class ClearrEngine : IDisposable
         }
 
         _log.LogDebug("Report: {Shows} shows, {Movies} movies, {Users} tracked users", report.Shows.Count, report.Movies.Count, report.TrackedUsers.Count);
-        return new Built(lib, report, sonarr, radarr);
+        var built = new Built(lib, report, sonarr, radarr);
+        _last = (DateTime.UtcNow, built);
+        return built;
     }
 
     private static T? Match<T>(Dictionary<string, string> providerIds, Dictionary<string, T> index, params string[] providers)
@@ -163,9 +166,10 @@ public sealed class ClearrEngine : IDisposable
         }
 
         // Mirror show/movie keeps as a tag in Sonarr/Radarr, the *arr way.
+        // Only the Sonarr/Radarr ids are needed, so a recent report will do.
         try
         {
-            var built = await BuildAsync(ct);
+            var built = _last is { } last && DateTime.UtcNow - last.At < TimeSpan.FromMinutes(10) ? last.Built : await BuildAsync(ct);
             if (kind == "show" && built.Report.Shows.FirstOrDefault(x => x.ShowId == id) is { ArrId: int sid } && s.Sonarr.IsConfigured)
             {
                 await new SonarrClient(Http(), s.Sonarr).SetTagAsync(sid, tag, keep, ct);
@@ -205,10 +209,12 @@ public sealed class ClearrEngine : IDisposable
             var (lib, report, _, radarrIndex) = await BuildAsync(ct);
             var result = new CleanupResult { DryRun = dryRun };
             var work = new List<Work>();
+            var showsById = lib.Shows.ToDictionary(x => x.Id);
+            var radarrById = radarrIndex.Values.GroupBy(v => v.Item.Id).ToDictionary(g => g.Key, g => g.First());
 
             foreach (var sr in report.Shows)
             {
-                var show = lib.Shows.First(x => x.Id == sr.ShowId);
+                var show = showsById[sr.ShowId];
                 var viaSonarr = sr.Via == "Sonarr";
                 if (sr.Via == null)
                 {
@@ -233,7 +239,7 @@ public sealed class ClearrEngine : IDisposable
                     var title = mr.Name + (mr.Year.HasValue ? $" ({mr.Year})" : "");
                     if (mr.Via == "Radarr")
                     {
-                        var rm = radarrIndex.Values.FirstOrDefault(v => v.Item.Id == mr.ArrId);
+                        var rm = mr.ArrId is int rid ? radarrById.GetValueOrDefault(rid) : null;
                         work.Add(new Work("Movie", title, null, null, mr.Reason, mr.ArrId, null, rm, null));
                     }
                     else
@@ -246,6 +252,28 @@ public sealed class ClearrEngine : IDisposable
             var sonarr = s.Sonarr.IsConfigured ? new SonarrClient(Http(), s.Sonarr) : null;
             var radarr = s.Radarr.IsConfigured ? new RadarrClient(Http(), s.Radarr) : null;
             var cap = s.MaxDeleteGbPerRun > 0 ? s.MaxDeleteGbPerRun * 1024L * 1024L * 1024L : long.MaxValue;
+
+            // Each show's file list from Sonarr, fetched side by side (a season and its show share one list).
+            var episodeFiles = new Dictionary<int, Task<List<EpisodeFile>>>();
+            using var gate = new SemaphoreSlim(4, 4);
+            foreach (var id in work.Where(x => x.Direct == null && x.Kind != "Movie" && x.ArrId.HasValue).Select(x => x.ArrId!.Value).Distinct())
+            {
+                episodeFiles[id] = FetchAsync(id);
+            }
+
+            async Task<List<EpisodeFile>> FetchAsync(int seriesId)
+            {
+                await gate.WaitAsync(ct);
+                try
+                {
+                    return await sonarr!.EpisodeFilesAsync(seriesId, ct);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }
+
             long planned = 0;
             var deletedAny = false;
             string? stopped = null;
@@ -290,7 +318,7 @@ public sealed class ClearrEngine : IDisposable
                     }
                     else
                     {
-                        var all = await sonarr!.EpisodeFilesAsync(w.ArrId!.Value, ct);
+                        var all = await episodeFiles[w.ArrId!.Value];
                         files = w.SeasonNumber is int n ? all.Where(f => f.SeasonNumber == n).ToList() : all;
                         if (files.Count == 0)
                         {
@@ -381,6 +409,9 @@ public sealed class ClearrEngine : IDisposable
 
                 result.Actions.Add(entry);
             }
+
+            // Let any file-list requests still in flight finish (their errors were reported per item above).
+            await Task.WhenAll(episodeFiles.Values).ContinueWith(_ => { }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
 
             if (deletedAny && s.RefreshJellyfinAfterCleanup)
             {

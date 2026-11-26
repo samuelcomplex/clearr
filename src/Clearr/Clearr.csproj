@@ -6,8 +6,10 @@
     <RootNamespace>Clearr</RootNamespace>
     <Version>0.2.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- A small app on a home server: the workstation GC uses a fraction of the memory of the server GC. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-      <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
     <Copyright>Copyright (C) 2026 samuelcomplex</Copyright>
   </PropertyGroup>
   <ItemGroup>

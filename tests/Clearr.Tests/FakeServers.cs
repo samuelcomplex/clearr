@@ -37,6 +37,11 @@ public class FakeWorld
     public HashSet<int> FailEpisodeFileDelete = new();
     public Action<string>? OnChange;
 
+    /// <summary>Simulated network + server time per request (perf tests).</summary>
+    public int LatencyMs;
+
+    public int Requests;
+
     public void Record(string line)
     {
         Log.Add(line);
@@ -52,6 +57,16 @@ public static class FakeServers
         b.WebHost.UseUrls("http://127.0.0.1:0");
         b.Logging.ClearProviders();
         var app = b.Build();
+        app.Use(async (ctx, next) =>
+        {
+            Interlocked.Increment(ref w.Requests);
+            if (w.LatencyMs > 0)
+            {
+                await Task.Delay(w.LatencyMs);
+            }
+
+            await next();
+        });
 
         // ---------------- Jellyfin (PascalCase JSON, like the real thing) ----------------
         var pascal = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = null };

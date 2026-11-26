@@ -18,10 +18,10 @@ esac
 
 mkdir -p /config
 # Only touch ownership when it's wrong, so large /config folders don't slow every start.
-if [ "$(stat -c %u:%g /config)" != "$PUID:$PGID" ] || find /config -mindepth 1 \( ! -uid "$PUID" -o ! -gid "$PGID" \) -print -quit | grep -q .; then
+if [ "$(stat -c %u:%g /config)" != "$PUID:$PGID" ] || [ -n "$(find /config -mindepth 1 \( ! -user "$PUID" -o ! -group "$PGID" \) | head -n 1)" ]; then
     echo "Setting owner of /config to $PUID:$PGID"
     chown -R "$PUID:$PGID" /config
 fi
 
 echo "Starting Clearr as $PUID:$PGID"
-exec setpriv --reuid="$PUID" --regid="$PGID" --clear-groups --inh-caps=-all -- dotnet /app/Clearr.dll "$@"
+exec su-exec "$PUID:$PGID" dotnet /app/Clearr.dll "$@"

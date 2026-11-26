@@ -10,7 +10,10 @@ COPY src/Clearr.Core/ src/Clearr.Core/
 ARG VERSION=0.1.0
 RUN dotnet publish src/Clearr/Clearr.csproj -c Release -o /app -p:UseAppHost=false -p:Version=$VERSION
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+# su-exec drops from root to PUID:PGID; tzdata makes TZ work for the daily run time.
+# hadolint ignore=DL3018
+RUN apk add --no-cache su-exec tzdata
 WORKDIR /app
 COPY --from=build /app .
 COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
