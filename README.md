@@ -2,6 +2,8 @@
 
 [![Build](https://github.com/samuelcomplex/clearr/actions/workflows/build.yml/badge.svg)](https://github.com/samuelcomplex/clearr/actions/workflows/build.yml)
 [![Compatibility check](https://github.com/samuelcomplex/clearr/actions/workflows/compatibility.yml/badge.svg)](https://github.com/samuelcomplex/clearr/actions/workflows/compatibility.yml)
+[![Lint](https://github.com/samuelcomplex/clearr/actions/workflows/lint.yml/badge.svg)](https://github.com/samuelcomplex/clearr/actions/workflows/lint.yml)
+[![CodeQL](https://github.com/samuelcomplex/clearr/actions/workflows/codeql.yml/badge.svg)](https://github.com/samuelcomplex/clearr/actions/workflows/codeql.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors)](https://github.com/sponsors/samuelcomplex)
 
 ![Clearr](docs/logo/banner.png)
@@ -23,6 +25,10 @@ It's a companion to the *arr stack. **Sonarr and Radarr delete the files.** Clea
 - **Keep** anything with one click. It's mirrored as a `keep` tag in Sonarr/Radarr, and a `keep` tag set in Jellyfin, Sonarr or Radarr works too.
 - **Web UI for everything**: connections (with Test buttons), schedule, rules, users and password. There are no config files to edit.
 - Works on desktop and mobile. Optional password, optional **HTTPS** (your own certificate or a self-signed one), and an *arr-style API key.
+- **Logs page** with *arr-style log files, and a Debug option that records every decision.
+- Also available as a **Jellyfin plugin**: [Clearr for Jellyfin](https://github.com/samuelcomplex/clearr-plugin), same features, inside Jellyfin.
+
+**Guides:** [Install](docs/install.md) · [Settings](docs/settings.md) · [FAQ and troubleshooting](docs/faq.md) · [Reverse proxy](docs/reverse-proxy.md) · [Changelog](CHANGELOG.md)
 
 ## Install
 
@@ -35,8 +41,10 @@ services:
     container_name: clearr
     environment:
       - TZ=Europe/Stockholm      # the daily run uses this time zone
+      - PUID=1000                # user and group Clearr runs as; files in /config
+      - PGID=1000                #   belong to them (find yours with: id)
     volumes:
-      - ./clearr:/config         # settings, keep list and history
+      - ./clearr:/config         # settings, keep list, history and logs
       # - /path/to/certs:/certs:ro   # only if you use your own HTTPS certificate
     ports:
       - 8585:8585                # web UI (HTTP)
@@ -46,7 +54,9 @@ services:
 
 In Portainer: **Stacks → Add stack**, paste the above, and **Deploy**. Then open `http://<server>:8585`.
 
-Clearr needs **no access to your media folders**. Everything goes through the Jellyfin, Sonarr and Radarr APIs.
+Clearr needs **no access to your media folders**. Everything goes through the Jellyfin, Sonarr and Radarr APIs. Images are built for amd64 and arm64.
+
+See the [install guide](docs/install.md) for `docker run`, Unraid, the Jellyfin plugin, updating and backups.
 
 ### First run
 
@@ -58,6 +68,8 @@ Clearr needs **no access to your media folders**. Everything goes through the Je
 2. Open **Shows** and **Movies** to see everyone's progress.
 3. Leave it in **Dry run** for a week or so. The History tab shows what *would* have been cleared each night. Click **Keep** on anything you want to hold onto.
 4. When the dry-run list looks right, set **Cleanup mode** to **Delete**.
+
+Until you set a password, Clearr only answers devices on your local network. Set one before making it reachable from outside, for example through a [reverse proxy](docs/reverse-proxy.md).
 
 ### HTTPS (optional)
 
@@ -98,12 +110,15 @@ A viewer who is *In progress* with no progress for **30 days** is flagged: **Sam
 
 ## Safety
 
-- **Nothing is removed unless Cleanup mode is Delete.** That applies to the nightly run and the *Delete eligible now* button, which only appears in Delete mode. The server refuses deletion requests in any other mode.
+- **Nothing is removed unless Cleanup mode is Delete.** That applies to the nightly run and the *Delete eligible now* button, which only appears in Delete mode. The server refuses deletion requests in any other mode, and checks the mode again before every single item, so switching away from Delete stops a run in progress.
 - **Preview cleanup** lists every item with its size (as reported by Sonarr/Radarr) and a total. *Delete eligible now* shows the same list again for you to confirm.
 - **Max GB per run** (default 50). Anything over the limit waits for the next night.
 - **Unmonitor before delete.** If unmonitoring fails, nothing is deleted.
 - **New-download guard.** If Sonarr has more files in a season than Jellyfin knows episodes (for example an episode that just downloaded), that season is skipped until Jellyfin catches up.
 - **History** records every removal, dry-run hit, skip and failure, with sizes.
+- **Tested hard.** Besides the end-to-end tests, every change is checked against hundreds of randomly generated libraries, comparing what Clearr removes with an independent re-implementation of these rules.
+
+Wondering why something *wasn't* removed? Every item shows its reason, and the [FAQ](docs/faq.md#why-wasnt-this-season-or-show-or-movie-removed) explains each one.
 
 ![Preview cleanup](docs/screenshots/preview.png)
 
@@ -139,7 +154,7 @@ Click **Keep** on a show, season or movie. Kept items are never removed.
 
 ## API
 
-Every page in the UI uses a small JSON API under `/api`, for example `GET /api/report`, `POST /api/cleanup?dryRun=true` and `GET /api/history`. When a password is set, send the API key shown in **Settings → Security** as an `X-Api-Key` header. `GET /ping` is open, for health checks.
+Every page in the UI uses a small JSON API under `/api`, for example `GET /api/report`, `POST /api/cleanup?dryRun=true` and `GET /api/history`. Send the API key shown in **Settings → Security** as an `X-Api-Key` header. `GET /ping` is open, for health checks.
 
 ## Compatibility
 
@@ -155,11 +170,11 @@ The [compatibility check](.github/workflows/compatibility.yml) runs a **real end
 
 ```
 dotnet run --project src/Clearr                 # http://localhost:8585 (CLEARR_PORT to change), settings in ./config next to the binary
-dotnet run --project tests/Clearr.Tests         # end-to-end tests against built-in fake Jellyfin/Sonarr/Radarr
+dotnet run --project tests/Clearr.Tests         # all tests, against built-in fake Jellyfin/Sonarr/Radarr
 dotnet run --project tools/Demo                 # demo household on http://127.0.0.1:6567
 ```
 
-Clearr is .NET 10 / ASP.NET Core with a plain HTML/JS UI and no third-party packages. Settings, the keep list and history are JSON files in `/config`.
+Clearr is .NET 10 / ASP.NET Core with a plain HTML/JS UI and no third-party packages. Settings, the keep list and history are JSON files in `/config`. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and [SECURITY.md](SECURITY.md) for reporting security problems.
 
 Clearr grew out of Watch Tracker, a Jellyfin plugin. That plugin is now [Clearr for Jellyfin](https://github.com/samuelcomplex/clearr-plugin): it is built from this repo's Clearr.Core, so both share the same features and updates.
 

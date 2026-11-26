@@ -1,0 +1,51 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! For security problems, use **Security → Report a vulnerability** instead.
+        If something was removed that shouldn't have been, say so first — those get looked at before anything else.
+  - type: dropdown
+    id: form
+    attributes:
+      label: Which Clearr
+      options:
+        - Clearr app (Docker)
+        - Clearr for Jellyfin (plugin)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Clearr version
+      description: Shown at the bottom of the sidebar (app) or under Dashboard → Plugins (plugin).
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Jellyfin, Sonarr and Radarr versions
+      placeholder: "Jellyfin 12.4.0, Sonarr 4.0.20, Radarr 5.20.0"
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Cleanup mode
+      options: [Off, Dry run, Delete]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        App: the Logs page (turn on Debug logging in Settings, then reproduce). Plugin: Jellyfin's Dashboard → Logs, lines with "Clearr".
+        API keys are never written to the logs, but check for anything else private before pasting.
+      render: text
