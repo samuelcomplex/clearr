@@ -63,6 +63,7 @@ builder.Services.AddSingleton<Scheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Scheduler>());
 
 var app = builder.Build();
+_ = app.Services.GetRequiredService<AuthService>(); // creates api.key and session.key at startup
 var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
 app.Use(async (ctx, next) =>

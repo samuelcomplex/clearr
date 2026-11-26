@@ -58,10 +58,10 @@ jobs:
           M="$RUNNER_TEMP/media"
           docker run -d --name jellyfin -p 8096:8096 -v "$M:/media" jellyfin/jellyfin:${{ matrix.jellyfin }}
           for app in sonarr radarr; do mkdir -p "$RUNNER_TEMP/$app"; done
-          docker run -d --name sonarr -p 8989:8989 -e PUID=$(id -u) -e PGID=$(id -g) -v "$RUNNER_TEMP/sonarr:/config" -v "$M/tv:/tv" lscr.io/linuxserver/sonarr:${{ matrix.arr }}
-          docker run -d --name radarr -p 7878:7878 -e PUID=$(id -u) -e PGID=$(id -g) -v "$RUNNER_TEMP/radarr:/config" -v "$M/movies:/movies" lscr.io/linuxserver/radarr:${{ matrix.arr }}
+          docker run -d --name sonarr -p 8989:8989 -e PUID="$(id -u)" -e PGID="$(id -g)" -v "$RUNNER_TEMP/sonarr:/config" -v "$M/tv:/tv" lscr.io/linuxserver/sonarr:${{ matrix.arr }}
+          docker run -d --name radarr -p 7878:7878 -e PUID="$(id -u)" -e PGID="$(id -g)" -v "$RUNNER_TEMP/radarr:/config" -v "$M/movies:/movies" lscr.io/linuxserver/radarr:${{ matrix.arr }}
           key() { sed -n 's:.*<ApiKey>\(.*\)</ApiKey>.*:\1:p' "$RUNNER_TEMP/$1/config.xml" 2>/dev/null || true; }
-          for i in $(seq 1 90); do
+          for _ in $(seq 1 90); do
             S=$(key sonarr); R=$(key radarr)
             if [ -n "$S" ] && [ -n "$R" ] \
                && curl -sf -H "X-Api-Key: $S" http://localhost:8989/api/v3/system/status >/dev/null \
