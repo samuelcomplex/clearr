@@ -331,6 +331,18 @@ foreign.Headers.Add("X-Clearr-Request", "1");
 foreign.Headers.Add("Origin", "https://evil.example");
 Expect((await bare.SendAsync(foreign)).StatusCode == HttpStatusCode.Forbidden, "Cross-site protection: a request from another site's page is refused");
 Expect((await bare.GetAsync("/api/history")).IsSuccessStatusCode, "Reading still works without the header (no password set, local address)");
+var proxied = new HttpRequestMessage(HttpMethod.Get, "/api/history");
+proxied.Headers.Add("X-Forwarded-For", "203.0.113.50");
+Expect((await bare.SendAsync(proxied)).StatusCode == HttpStatusCode.Unauthorized, "Behind a reverse proxy: an internet visitor is still refused while no password is set");
+var proxiedLan = new HttpRequestMessage(HttpMethod.Get, "/api/history");
+proxiedLan.Headers.Add("X-Forwarded-For", "192.168.1.30");
+Expect((await bare.SendAsync(proxiedLan)).IsSuccessStatusCode, "Behind a reverse proxy: a visitor on the local network is let in");
+var proxiedSave = new HttpRequestMessage(HttpMethod.Post, "/api/cleanup?dryRun=true");
+proxiedSave.Headers.Add("X-Clearr-Request", "1");
+proxiedSave.Headers.Add("X-Forwarded-Host", "clearr.example.com");
+proxiedSave.Headers.Add("X-Forwarded-Proto", "https");
+proxiedSave.Headers.Add("Origin", "https://clearr.example.com");
+Expect((await bare.SendAsync(proxiedSave)).IsSuccessStatusCode, "Behind a reverse proxy on its own domain: saving from the page works (Origin matches the forwarded host)");
 
 var guard = await http.PostAsync("/api/cleanup?dryRun=false", null);
 Console.WriteLine($"  guard: {(int)guard.StatusCode} deletes={w.Log.Count(l => l.StartsWith("DELETE"))}");

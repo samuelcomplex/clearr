@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Sockets;
 
 namespace Clearr.Api;
 
@@ -66,7 +65,13 @@ public static class Security
         return null;
     }
 
-    /// <summary>Loopback, private, link-local, CGNAT/Tailscale and IPv6 unique-local addresses.</summary>
+    /// <summary>Loopback, private, link-local, CGNAT/Tailscale and IPv6 unique-local networks.</summary>
+    public static readonly IReadOnlyList<IPNetwork> LocalNetworks = new[]
+    {
+        "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10",
+        "::1/128", "fc00::/7", "fe80::/10",
+    }.Select(n => IPNetwork.Parse(n)).ToArray();
+
     public static bool IsLocal(IPAddress? ip)
     {
         if (ip == null)
@@ -79,28 +84,7 @@ public static class Security
             ip = ip.MapToIPv4();
         }
 
-        if (IPAddress.IsLoopback(ip))
-        {
-            return true;
-        }
-
-        if (ip.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var b = ip.GetAddressBytes();
-            return b[0] == 10
-                || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
-                || (b[0] == 192 && b[1] == 168)
-                || (b[0] == 169 && b[1] == 254)
-                || (b[0] == 100 && b[1] >= 64 && b[1] <= 127);
-        }
-
-        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var b = ip.GetAddressBytes();
-            return ip.IsIPv6LinkLocal || (b[0] & 0xFE) == 0xFC;
-        }
-
-        return false;
+        return LocalNetworks.Any(n => n.Contains(ip));
     }
 }
 

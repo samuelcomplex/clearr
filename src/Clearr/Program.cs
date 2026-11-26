@@ -48,6 +48,22 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
 });
 builder.Services.AddHttpClient("clearr");
+
+// Behind a reverse proxy (Nginx Proxy Manager, Traefik, Caddy …), use the visitor's real address and host,
+// so "local network only" and the cross-site checks see who is actually connecting.
+// Only proxies on local addresses are trusted to say so.
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+    foreach (var net in Security.LocalNetworks)
+    {
+        o.KnownIPNetworks.Add(net);
+    }
+});
 builder.Services.AddSingleton(startupPaths);
 builder.Services.AddSingleton(https);
 builder.Services.AddSingleton(settingsStore);
@@ -82,6 +98,7 @@ if (https.Error != null)
 }
 var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
+app.UseForwardedHeaders();
 app.Use(async (ctx, next) =>
 {
     Security.AddHeaders(ctx);
