@@ -45,10 +45,10 @@ jobs:
           mkdir -p "$SHOW/Season 01" "$SHOW/Season 02" "$MOVIE"
           gen() { docker run --rm -v "$M:/media" --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg jellyfin/jellyfin:latest \
                     -loglevel error -f lavfi -i testsrc=size=160x120:rate=1 -t 120 -c:v libx264 -pix_fmt yuv420p "$1"; }
-          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad - S01E01.mkv"
-          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad - S01E02.mkv"
-          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 02/Breaking Bad - S02E01.mkv"
-          gen "/media/movies/The Matrix (1999) [tmdbid-603]/The Matrix (1999).mkv"
+          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad - S01E01 - HDTV-720p.mkv"
+          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad - S01E02 - HDTV-720p.mkv"
+          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 02/Breaking Bad - S02E01 - HDTV-720p.mkv"
+          gen "/media/movies/The Matrix (1999) [tmdbid-603]/The Matrix (1999) Bluray-1080p.mkv"
           sudo chmod -R a+rwX "$M"
           find "$M" -type f
           echo "MEDIA_DIR=$M" >> "$GITHUB_ENV"
