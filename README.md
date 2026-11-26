@@ -21,7 +21,7 @@ It's a companion to the *arr stack. **Sonarr and Radarr delete the files.** Clea
 - **Safe by default**: starts in Dry run, previews with sizes, has a per-run size limit, never touches files Jellyfin hasn't seen yet, and keeps a full history.
 - **Keep** anything with one click. It's mirrored as a `keep` tag in Sonarr/Radarr, and a `keep` tag set in Jellyfin, Sonarr or Radarr works too.
 - **Web UI for everything**: connections (with Test buttons), schedule, rules, users and password. There are no config files to edit.
-- Works on desktop and mobile. Optional password, and an *arr-style API key.
+- Works on desktop and mobile. Optional password, optional **HTTPS** (your own certificate or a self-signed one), and an *arr-style API key.
 
 ## Install
 
@@ -33,15 +33,17 @@ services:
     image: ghcr.io/samuelcomplex/clearr:latest
     container_name: clearr
     environment:
-      - TZ=Europe/Stockholm   # the daily run uses this time zone
+      - TZ=Europe/Stockholm      # the daily run uses this time zone
     volumes:
-      - ./clearr:/config      # settings, keep list and history
+      - ./clearr:/config         # settings, keep list and history
+      # - /path/to/certs:/certs:ro   # only if you use your own HTTPS certificate
     ports:
-      - 6565:6565
-    restart: unless-stopped
+      - 8585:8585                # web UI (HTTP)
+      # - 8586:8586              # HTTPS, if enabled in Settings
+    restart: unless-stopped      # also lets "Restart Clearr" in Settings work
 ```
 
-In Portainer: **Stacks → Add stack**, paste the above, and **Deploy**. Then open `http://<server>:6565`.
+In Portainer: **Stacks → Add stack**, paste the above, and **Deploy**. Then open `http://<server>:8585`.
 
 Clearr needs **no access to your media folders**. Everything goes through the Jellyfin, Sonarr and Radarr APIs.
 
@@ -55,6 +57,20 @@ Clearr needs **no access to your media folders**. Everything goes through the Je
 2. Open **Shows** and **Movies** to see everyone's progress.
 3. Leave it in **Dry run** for a week or so. The History tab shows what *would* have been cleared each night. Click **Keep** on anything you want to hold onto.
 4. When the dry-run list looks right, set **Cleanup mode** to **Delete**.
+
+### HTTPS (optional)
+
+If a reverse proxy like Nginx Proxy Manager already serves Clearr over HTTPS, you don't need this. Otherwise, go to **Settings → HTTPS**:
+
+1. Tick **Enable HTTPS**. The port defaults to **8586**; map it in Docker too (`8586:8586`).
+2. Choose a certificate, or leave the path empty for a **self-signed** one that Clearr creates and keeps in `/config`. Accepted formats:
+   - **PEM** certificate + key, such as Let's Encrypt's `fullchain.pem` + `privkey.pem`
+   - **.pfx/.p12**, optionally with a password
+
+   Mount the certificate folder into the container read-only, for example `- /path/to/certs:/certs:ro`, and use paths like `/certs/fullchain.pem`.
+3. Click **Check certificate**, then **Save** and **Restart Clearr**. The restart needs `restart: unless-stopped`.
+
+Plain HTTP stays on 8585. If the certificate can't be loaded at startup, Clearr logs why, keeps running on HTTP, and shows the error in Settings.
 
 ## How it decides
 
@@ -137,7 +153,7 @@ The [compatibility check](.github/workflows/compatibility.yml) runs a **real end
 ## Development
 
 ```
-dotnet run --project src/Clearr                 # http://localhost:6565, settings in src/Clearr/bin/.../config
+dotnet run --project src/Clearr                 # http://localhost:8585 (CLEARR_PORT to change), settings in ./config next to the binary
 dotnet run --project tests/Clearr.Tests         # end-to-end tests against built-in fake Jellyfin/Sonarr/Radarr
 dotnet run --project tools/Demo                 # demo household on http://127.0.0.1:6567
 ```

@@ -215,14 +215,48 @@ Expect(history.GetAll().Count(h => h.Action == "Deleted") == 3, "History: 3 dele
 // ---------------------------------------------------------------- web app: auth + guard over HTTP
 var appDir = Path.Combine(tmp, "app");
 Environment.SetEnvironmentVariable("CLEARR_CONFIG_DIR", appDir);
-Environment.SetEnvironmentVariable("ASPNETCORE_URLS", "http://127.0.0.1:16565");
+Environment.SetEnvironmentVariable("CLEARR_PORT", "16565");
 Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", AppContext.BaseDirectory);
 var webroot = AppContext.BaseDirectory;
 while (webroot != null && !Directory.Exists(Path.Combine(webroot, "src", "Clearr", "wwwroot"))) { webroot = Path.GetDirectoryName(webroot.TrimEnd('/')); }
 Environment.SetEnvironmentVariable("ASPNETCORE_WEBROOT", Path.Combine(webroot!, "src", "Clearr", "wwwroot"));
 Environment.SetEnvironmentVariable("Logging__LogLevel__Default", "Warning");
 Directory.CreateDirectory(appDir);
-new SettingsStore(new ConfigPaths(appDir)).Save(new ClearrSettings { Jellyfin = new() { Url = url + "/jf", ApiKey = "jf-key" }, Sonarr = new() { Url = url + "/sonarr", ApiKey = "sonarr-key" } });
+new SettingsStore(new ConfigPaths(appDir)).Save(new ClearrSettings { Jellyfin = new() { Url = url + "/jf", ApiKey = "jf-key" }, Sonarr = new() { Url = url + "/sonarr", ApiKey = "sonarr-key" }, Https = new() { Enabled = true, Port = 16566 } });
+
+// ---------------------------------------------------------------- certificates
+var certDir = Path.Combine(tmp, "certs");
+Directory.CreateDirectory(certDir);
+using (var rsa = System.Security.Cryptography.RSA.Create(2048))
+{
+    var req = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=clearr.test", rsa, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+    using var c = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddDays(90));
+    File.WriteAllText(Path.Combine(certDir, "fullchain.pem"), c.ExportCertificatePem());
+    File.WriteAllText(Path.Combine(certDir, "privkey.pem"), rsa.ExportPkcs8PrivateKeyPem());
+    File.WriteAllBytes(Path.Combine(certDir, "cert.pfx"), c.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx, "pfx-pass"));
+}
+
+var cp = new ConfigPaths(Path.Combine(tmp, "certcfg"));
+using (var pem = Clearr.Api.Certificates.Load(new HttpsSettings { CertificatePath = Path.Combine(certDir, "fullchain.pem"), KeyPath = Path.Combine(certDir, "privkey.pem") }, cp))
+{
+    Expect(pem.HasPrivateKey && Clearr.Api.Certificates.Describe(pem).Contains("clearr.test"), "PEM certificate + key (Let's Encrypt / NPM style) loads");
+}
+
+using (var pfx = Clearr.Api.Certificates.Load(new HttpsSettings { CertificatePath = Path.Combine(certDir, "cert.pfx"), CertificatePassword = "pfx-pass" }, cp))
+{
+    Expect(pfx.HasPrivateKey, "Password-protected .pfx loads");
+}
+
+using (var self = Clearr.Api.Certificates.Load(new HttpsSettings(), cp))
+{
+    Expect(self.HasPrivateKey && File.Exists(cp.File("clearr-selfsigned.pfx")) && Clearr.Api.Certificates.Describe(self).Contains("self-signed"), "Empty path: self-signed certificate created and stored in /config");
+}
+
+try { Clearr.Api.Certificates.Load(new HttpsSettings { CertificatePath = "/nope/cert.pem" }, cp); Expect(false, "Missing certificate reported"); }
+catch (ArgumentException ex) { Expect(ex.Message.Contains("not found"), "Missing certificate reported clearly"); }
+
+try { Clearr.Api.Certificates.Load(new HttpsSettings { CertificatePath = Path.Combine(certDir, "fullchain.pem") }, cp); Expect(false, "PEM without key rejected"); }
+catch (Exception ex) { Expect(ex is ArgumentException or System.Security.Cryptography.CryptographicException, "PEM without its key rejected: " + ex.Message.Split('.')[0]); }
 var appThread = new Thread(() => typeof(Clearr.Api.AuthService).Assembly.EntryPoint!.Invoke(null, new object[] { Array.Empty<string>() })) { IsBackground = true };
 appThread.Start();
 var http = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:16565") };
@@ -232,6 +266,10 @@ for (var i = 0; i < 50; i++)
     await Task.Delay(200);
 }
 
+var insecure = new HttpClient(new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true }) { BaseAddress = new Uri("https://127.0.0.1:16566") };
+Expect((await insecure.GetStringAsync("/ping")) == "ok", "HTTPS works on its own port (self-signed)");
+var stj = (await http.GetFromJsonAsync<JsonObject>("/api/status"))!;
+Expect(stj["https"]!["active"]!.GetValue<bool>() && !stj["https"]!["restartNeeded"]!.GetValue<bool>(), "Status reports HTTPS active, no restart needed");
 var html = await http.GetStringAsync("/");
 Expect(html.Contains("<title>Clearr</title>"), "Web UI served");
 var rep = await http.GetAsync("/api/report");
@@ -248,6 +286,10 @@ Expect(!bad!["ok"]!.GetValue<bool>() && bad["message"]!.GetValue<string>().Conta
 
 var cur = (await http.GetFromJsonAsync<JsonObject>("/api/settings"))!;
 var apiKey = cur["apiKey"]!.GetValue<string>();
+var badCert = cur["settings"]!.DeepClone();
+badCert["https"]!["certificatePath"] = "/missing/fullchain.pem";
+var badPut = await http.PutAsJsonAsync("/api/settings", new JsonObject { ["settings"] = badCert });
+Expect(badPut.StatusCode == HttpStatusCode.BadRequest && (await badPut.Content.ReadAsStringAsync()).Contains("not found"), "Saving HTTPS with a missing certificate is refused");
 var put = await http.PutAsJsonAsync("/api/settings", new JsonObject { ["settings"] = cur["settings"]!.DeepClone(), ["newPassword"] = "hunter22" });
 Expect(put.IsSuccessStatusCode, "Password set");
 var anon = new HttpClient { BaseAddress = http.BaseAddress };

@@ -129,6 +129,17 @@
                 <label class="check hidden" id="clearPwRow"><input type="checkbox" id="clearPassword"> Remove the password</label>
                 <label>API key <span class="hint">(for scripts / Home Assistant: X-Api-Key header)</span><input id="apiKey" readonly></label>
 
+                <h2>HTTPS</h2>
+                <p class="hint">Not needed if a reverse proxy (like Nginx Proxy Manager) already handles HTTPS for Clearr. Plain HTTP always stays on port 8585.</p>
+                <p id="httpsState" class="hint"></p>
+                <label class="check"><input type="checkbox" name="https.enabled"> Enable HTTPS</label>
+                <label>HTTPS port<input name="https.port" type="number" min="1" max="65535"><span class="hint">Inside the container. Map it in Docker too, e.g. 8586:8586.</span></label>
+                <label>Certificate file<input name="https.certificatePath" placeholder="Leave empty for a self-signed certificate"><span class="hint">A path inside the container: .pfx/.p12, or a PEM certificate such as /certs/fullchain.pem. Mount the folder into the container read-only.</span></label>
+                <label>Private key file<input name="https.keyPath" placeholder="/certs/privkey.pem"><span class="hint">For PEM certificates only. Not needed for .pfx.</span></label>
+                <label>Certificate password<input name="https.certificatePassword" type="password" autocomplete="off"><span class="hint">Only for password-protected .pfx files or encrypted keys.</span></label>
+                <button type="button" class="btn small" id="checkCert">Check certificate</button><span id="certResult" class="test-result"></span>
+                <div id="restartRow" class="banner hidden" style="margin-top:14px">HTTPS changes take effect after a restart. <button type="button" class="btn small primary" id="restart">Restart Clearr</button></div>
+
                 <div class="save-row"><button type="submit" class="btn primary">Save</button><span id="saveMsg"></span></div>
             </form>
         </section>

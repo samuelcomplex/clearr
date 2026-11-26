@@ -3,9 +3,11 @@ services:
     image: ghcr.io/samuelcomplex/clearr:latest
     container_name: clearr
     environment:
-      - TZ=Europe/Stockholm   # the daily run uses this time zone
+      - TZ=Europe/Stockholm      # the daily run uses this time zone
     volumes:
-      - ./clearr:/config      # settings, keep list and history
+      - ./clearr:/config         # settings, keep list and history
+      # - /path/to/certs:/certs:ro   # only if you use your own HTTPS certificate
     ports:
-      - 6565:6565
-    restart: unless-stopped
+      - 8585:8585                # web UI (HTTP)
+      # - 8586:8586              # HTTPS, if enabled in Settings
+    restart: unless-stopped      # also lets "Restart Clearr" in Settings work

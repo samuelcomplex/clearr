@@ -6,9 +6,34 @@ using Clearr.Core;
 using Clearr.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
-if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")) && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")))
+var startupPaths = new ConfigPaths();
+var https = new HttpsState();
+
+// HTTP on $CLEARR_PORT (default 8585); HTTPS on the configured port when enabled in Settings.
+// ASPNETCORE_URLS, if set, takes over completely (used by the dev tools).
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
-    builder.WebHost.UseUrls("http://0.0.0.0:6565");
+    var httpPort = int.TryParse(Environment.GetEnvironmentVariable("CLEARR_PORT"), out var p) ? p : 8585;
+    var startupSettings = new SettingsStore(startupPaths).Get();
+    builder.WebHost.ConfigureKestrel(k =>
+    {
+        k.ListenAnyIP(httpPort);
+        if (startupSettings.Https.Enabled)
+        {
+            try
+            {
+                var cert = Certificates.Load(startupSettings.Https, startupPaths);
+                k.ListenAnyIP(startupSettings.Https.Port, o => o.UseHttps(cert));
+                https.ActivePort = startupSettings.Https.Port;
+                https.Certificate = Certificates.Describe(cert);
+            }
+            catch (Exception ex)
+            {
+                https.Error = "HTTPS is off: " + ex.Message;
+                Console.Error.WriteLine(https.Error);
+            }
+        }
+    });
 }
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -17,7 +42,8 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
 });
 builder.Services.AddHttpClient("clearr");
-builder.Services.AddSingleton<ConfigPaths>();
+builder.Services.AddSingleton(startupPaths);
+builder.Services.AddSingleton(https);
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<KeepStore>();
 builder.Services.AddSingleton<HistoryStore>();
@@ -51,7 +77,7 @@ app.MapGet("/ping", () => "ok");
 
 var api = app.MapGroup("/api");
 
-api.MapGet("/status", (HttpContext ctx, AuthService auth, SettingsStore st, Scheduler sch) =>
+api.MapGet("/status", (HttpContext ctx, AuthService auth, SettingsStore st, Scheduler sch, HttpsState hs) =>
 {
     var s = st.Get();
     return Results.Ok(new
@@ -64,6 +90,7 @@ api.MapGet("/status", (HttpContext ctx, AuthService auth, SettingsStore st, Sche
         nextRun = sch.NextRun(s),
         lastRunAt = sch.LastRunAt,
         lastRunSummary = sch.LastRunSummary,
+        https = new { active = hs.ActivePort.HasValue, port = hs.ActivePort, certificate = hs.Certificate, error = hs.Error, restartNeeded = st.Get().Https.Enabled != hs.ActivePort.HasValue || (hs.ActivePort.HasValue && st.Get().Https.Port != hs.ActivePort) },
     });
 });
 
@@ -72,7 +99,7 @@ api.MapPost("/login", async (HttpContext ctx, AuthService auth) =>
     var body = await JsonNode.ParseAsync(ctx.Request.Body);
     if (!auth.PasswordRequired || auth.Verify(body?["password"]?.GetValue<string>() ?? ""))
     {
-        ctx.Response.Cookies.Append(AuthService.Cookie, auth.IssueSession(), new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Expires = DateTimeOffset.UtcNow.AddDays(30) });
+        ctx.Response.Cookies.Append(AuthService.Cookie, auth.IssueSession(), new CookieOptions { HttpOnly = true, Secure = ctx.Request.IsHttps, SameSite = SameSiteMode.Strict, Expires = DateTimeOffset.UtcNow.AddDays(30) });
         return Results.Ok(new { ok = true });
     }
 
@@ -120,12 +147,28 @@ api.MapPut("/settings", async (HttpContext ctx, SettingsStore st) =>
     incoming.InactiveDays = Math.Max(1, incoming.InactiveDays);
     incoming.SampledMaxEpisodes = Math.Max(0, incoming.SampledMaxEpisodes);
     incoming.MaxDeleteGbPerRun = Math.Max(0, incoming.MaxDeleteGbPerRun);
+    if (incoming.Https.Port is < 1 or > 65535)
+    {
+        return Results.BadRequest(new { error = "HTTPS port must be between 1 and 65535" });
+    }
+
+    if (incoming.Https.Enabled)
+    {
+        try
+        {
+            using var cert = Certificates.Load(incoming.Https, ctx.RequestServices.GetRequiredService<ConfigPaths>());
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = "HTTPS certificate problem: " + ex.Message });
+        }
+    }
     st.Save(incoming);
 
     // Keep the browser signed in when a password is first set.
     if (string.IsNullOrEmpty(current.PasswordHash) && !string.IsNullOrEmpty(incoming.PasswordHash))
     {
-        ctx.Response.Cookies.Append(AuthService.Cookie, ctx.RequestServices.GetRequiredService<AuthService>().IssueSession(), new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Expires = DateTimeOffset.UtcNow.AddDays(30) });
+        ctx.Response.Cookies.Append(AuthService.Cookie, ctx.RequestServices.GetRequiredService<AuthService>().IssueSession(), new CookieOptions { HttpOnly = true, Secure = ctx.Request.IsHttps, SameSite = SameSiteMode.Strict, Expires = DateTimeOffset.UtcNow.AddDays(30) });
     }
 
     return Results.Ok(new { ok = true });
@@ -197,6 +240,26 @@ api.MapPost("/cleanup", async (bool? dryRun, ClearrService svc, CancellationToke
     }
 });
 
+api.MapPost("/https/check", (HttpsSettings h, ConfigPaths paths) =>
+{
+    try
+    {
+        using var cert = Certificates.Load(h, paths);
+        return Results.Ok(new { ok = true, message = "Certificate OK: " + Certificates.Describe(cert) });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { ok = false, message = ex.Message });
+    }
+});
+
+api.MapPost("/restart", (IHostApplicationLifetime life) =>
+{
+    // Docker's restart policy (unless-stopped) starts Clearr again with the new settings.
+    _ = Task.Run(async () => { await Task.Delay(500); life.StopApplication(); });
+    return Results.Ok(new { ok = true });
+});
+
 api.MapGet("/history", (HistoryStore h) => Results.Ok(h.GetAll()));
 
 api.MapPost("/keep", async (HttpContext ctx, ClearrService svc, CancellationToken ct) =>
@@ -217,4 +280,11 @@ app.Run();
 
 public partial class Program
 {
+}
+
+public class HttpsState
+{
+    public int? ActivePort { get; set; }
+    public string? Certificate { get; set; }
+    public string? Error { get; set; }
 }

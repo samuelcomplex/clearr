@@ -269,12 +269,44 @@
                 if (el.type === 'checkbox') el.checked = !!v; else el.value = v == null ? '' : v;
             });
             $('#apiKey').value = r.apiKey;
+            renderHttps();
             $('#pwState').textContent = r.hasPassword ? 'A password is set. Enter a new one to change it.' : 'No password is set. Anyone who can reach Clearr can use it; set one if it\'s reachable by others.';
             $('#clearPwRow').classList.toggle('hidden', !r.hasPassword);
             $('#newPassword').value = ''; $('#clearPassword').checked = false;
             loadUsers(s.excludedUserIds || []);
         });
     }
+
+    function renderHttps() {
+        var h = state.status.https || {};
+        $('#httpsState').innerHTML = h.active
+            ? '<span class="ok-text">HTTPS is on, port ' + h.port + ' (' + esc(h.certificate) + ').</span>'
+            : h.error ? '<span class="error-text">' + esc(h.error) + '</span>' : 'HTTPS is off.';
+        $('#restartRow').classList.toggle('hidden', !h.restartNeeded);
+    }
+
+    $('#checkCert').addEventListener('click', function () {
+        var out = $('#certResult'); out.textContent = 'Checking…'; out.className = 'test-result';
+        api('https/check', 'POST', {
+            enabled: true, port: parseInt(form.elements['https.port'].value, 10) || 8586,
+            certificatePath: form.elements['https.certificatePath'].value.trim(), keyPath: form.elements['https.keyPath'].value.trim(),
+            certificatePassword: form.elements['https.certificatePassword'].value
+        }).then(function (r) { out.textContent = r.message; out.className = 'test-result ' + (r.ok ? 'ok-text' : 'error-text'); })
+          .catch(function (e) { out.textContent = e.message; out.className = 'test-result error-text'; });
+    });
+
+    $('#restart').addEventListener('click', function () {
+        var b = this; b.disabled = true; b.textContent = 'Restarting…';
+        api('restart', 'POST').catch(function () {}).then(function () {
+            var tries = 0;
+            (function wait() {
+                setTimeout(function () {
+                    fetch('ping', { cache: 'no-store' }).then(function (r) { if (r.ok) location.reload(); else throw 0; })
+                        .catch(function () { if (++tries < 60) wait(); else { b.textContent = 'Clearr didn\'t come back. Is the container set to restart: unless-stopped?'; } });
+                }, 1500);
+            })();
+        });
+    });
 
     function loadUsers(excluded) {
         $('#users').innerHTML = '<span class="muted small">Loading users…</span>';

@@ -113,8 +113,8 @@ await Poll("Sonarr to import the 3 episode files", async () =>
     if (diag++ % 4 == 1)
     {
         var sp = (await sonarr.GetFromJsonAsync<JsonObject>($"api/v3/series/{seriesId}"))!["path"];
-        var mi = await sonarr.GetStringAsync($"api/v3/manualimport?folder={Uri.EscapeDataString(sp!.GetValue<string>())}&seriesId={seriesId}&filterExistingFiles=false");
-        Console.WriteLine($"  sonarr path={sp} manualimport={(mi.Length > 1500 ? mi[..1500] : mi)}");
+        var mi = await sonarr.GetFromJsonAsync<JsonArray>($"api/v3/manualimport?folder={Uri.EscapeDataString(sp!.GetValue<string>())}&seriesId={seriesId}&filterExistingFiles=false");
+        foreach (var f in mi!) Console.WriteLine($"  sonarr file {f!["relativePath"]} rejections={f["rejections"]?.ToJsonString()} quality={f["quality"]?["quality"]?["name"]}");
     }
 
     await sonarr.PostAsJsonAsync("api/v3/command", new { name = "RescanSeries", seriesId });
@@ -141,8 +141,8 @@ await Poll("Radarr to import the movie file", async () =>
     if (rdiag++ % 4 == 1)
     {
         var mp = (await radarr.GetFromJsonAsync<JsonObject>($"api/v3/movie/{movieId}"))!["path"];
-        var mi = await radarr.GetStringAsync($"api/v3/manualimport?folder={Uri.EscapeDataString(mp!.GetValue<string>())}&movieId={movieId}&filterExistingFiles=false");
-        Console.WriteLine($"  radarr path={mp} manualimport={(mi.Length > 1500 ? mi[..1500] : mi)}");
+        var mi = await radarr.GetFromJsonAsync<JsonArray>($"api/v3/manualimport?folder={Uri.EscapeDataString(mp!.GetValue<string>())}&movieId={movieId}&filterExistingFiles=false");
+        foreach (var f in mi!) Console.WriteLine($"  radarr file {f!["relativePath"]} rejections={f["rejections"]?.ToJsonString()}");
     }
 
     await radarr.PostAsJsonAsync("api/v3/command", new { name = "RescanMovie", movieId });

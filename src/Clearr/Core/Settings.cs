@@ -14,6 +14,23 @@ public class ConnectionSettings
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
 }
 
+public class HttpsSettings
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>Port inside the container for HTTPS (HTTP stays on 8585).</summary>
+    public int Port { get; set; } = 8586;
+
+    /// <summary>.pfx/.p12, or a PEM certificate (.crt/.pem). Empty = self-signed certificate made by Clearr.</summary>
+    public string CertificatePath { get; set; } = "";
+
+    /// <summary>PEM private key (.key/.pem). Not needed for .pfx or when the PEM file also holds the key.</summary>
+    public string KeyPath { get; set; } = "";
+
+    /// <summary>Password for a .pfx (or an encrypted PEM key).</summary>
+    public string CertificatePassword { get; set; } = "";
+}
+
 public class ClearrSettings
 {
     // ---- Connections ----
@@ -43,6 +60,9 @@ public class ClearrSettings
 
     // ---- Users ----
     public List<string> ExcludedUserIds { get; set; } = new();
+
+    // ---- HTTPS ----
+    public HttpsSettings Https { get; set; } = new();
 
     // ---- Security ----
     /// <summary>PBKDF2 hash of the UI password; empty = no password.</summary>

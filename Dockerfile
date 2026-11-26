@@ -10,11 +10,11 @@ RUN dotnet publish src/Clearr/Clearr.csproj -c Release -o /app -p:UseAppHost=fal
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app .
-ENV ASPNETCORE_HTTP_PORTS=6565 \
+ENV CLEARR_PORT=8585 \
     CLEARR_CONFIG_DIR=/config \
     TZ=Etc/UTC
 VOLUME /config
-EXPOSE 6565
+EXPOSE 8585 8586
 LABEL org.opencontainers.image.title="Clearr" \
       org.opencontainers.image.description="Clears shows, seasons and movies through Sonarr/Radarr once everyone who started them in Jellyfin has finished." \
       org.opencontainers.image.source="https://github.com/samuelcomplex/clearr"
