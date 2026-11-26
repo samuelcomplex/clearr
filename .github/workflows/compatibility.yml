@@ -1,0 +1,105 @@
+name: Compatibility check
+
+# Weekly end-to-end test against REAL Jellyfin, Sonarr and Radarr containers:
+# generates tiny video files, lets Jellyfin/Sonarr/Radarr import them, marks a season and a movie
+# as watched, runs Clearr's preview and cleanup, and checks on disk that exactly the right files
+# were removed and the right things unmonitored. Newest pre-releases run as a non-failing early warning.
+# On failure it opens a GitHub issue (which emails the repo owner).
+
+on:
+  schedule:
+    - cron: "23 5 * * 1" # Mondays 05:23 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["src/**", "tests/Integration/**", ".github/workflows/compatibility.yml"]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  e2e:
+    name: Jellyfin ${{ matrix.jellyfin }} · Sonarr ${{ matrix.arr }} · Radarr ${{ matrix.arr }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { jellyfin: "10.11.11", arr: latest,  experimental: false }
+          - { jellyfin: latest,     arr: latest,  experimental: false }
+          - { jellyfin: unstable,   arr: develop, experimental: true }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Generate test media
+        run: |
+          M="$RUNNER_TEMP/media"
+          SHOW="$M/tv/Breaking Bad (2008) [tmdbid-1396]"
+          MOVIE="$M/movies/The Matrix (1999) [tmdbid-603]"
+          mkdir -p "$SHOW/Season 01" "$SHOW/Season 02" "$MOVIE"
+          gen() { docker run --rm -v "$M:/media" --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg jellyfin/jellyfin:latest \
+                    -loglevel error -f lavfi -i testsrc=size=160x120:rate=1 -t 120 -c:v libx264 -pix_fmt yuv420p "$1"; }
+          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad - S01E01.mkv"
+          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad - S01E02.mkv"
+          gen "/media/tv/Breaking Bad (2008) [tmdbid-1396]/Season 02/Breaking Bad - S02E01.mkv"
+          gen "/media/movies/The Matrix (1999) [tmdbid-603]/The Matrix (1999).mkv"
+          sudo chmod -R a+rwX "$M"
+          find "$M" -type f
+          echo "MEDIA_DIR=$M" >> "$GITHUB_ENV"
+
+      - name: Start Jellyfin, Sonarr, Radarr
+        run: |
+          M="$RUNNER_TEMP/media"
+          docker run -d --name jellyfin -p 8096:8096 -v "$M:/media" jellyfin/jellyfin:${{ matrix.jellyfin }}
+          for app in sonarr radarr; do mkdir -p "$RUNNER_TEMP/$app"; done
+          docker run -d --name sonarr -p 8989:8989 -e PUID=$(id -u) -e PGID=$(id -g) -v "$RUNNER_TEMP/sonarr:/config" -v "$M/tv:/tv" lscr.io/linuxserver/sonarr:${{ matrix.arr }}
+          docker run -d --name radarr -p 7878:7878 -e PUID=$(id -u) -e PGID=$(id -g) -v "$RUNNER_TEMP/radarr:/config" -v "$M/movies:/movies" lscr.io/linuxserver/radarr:${{ matrix.arr }}
+          key() { sed -n 's:.*<ApiKey>\(.*\)</ApiKey>.*:\1:p' "$RUNNER_TEMP/$1/config.xml" 2>/dev/null || true; }
+          for i in $(seq 1 90); do
+            S=$(key sonarr); R=$(key radarr)
+            if [ -n "$S" ] && [ -n "$R" ] \
+               && curl -sf -H "X-Api-Key: $S" http://localhost:8989/api/v3/system/status >/dev/null \
+               && curl -sf -H "X-Api-Key: $R" http://localhost:7878/api/v3/system/status >/dev/null; then break; fi
+            sleep 2
+          done
+          [ -n "$S" ] && [ -n "$R" ] || { docker logs sonarr | tail -50; docker logs radarr | tail -50; exit 1; }
+          echo "SONARR_API_KEY=$S" >> "$GITHUB_ENV"
+          echo "RADARR_API_KEY=$R" >> "$GITHUB_ENV"
+
+      - name: Run Clearr end-to-end
+        env:
+          JELLYFIN_URL: http://localhost:8096
+          SONARR_URL: http://localhost:8989
+          RADARR_URL: http://localhost:7878
+        run: dotnet run --project tests/Integration
+
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          for c in jellyfin sonarr radarr; do echo "::group::$c"; docker logs $c 2>&1 | tail -120; echo "::endgroup::"; done
+
+  report:
+    name: Open issue on failure
+    needs: [e2e]
+    if: failure() && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const title = 'Compatibility check failed';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `The weekly compatibility check failed: ${run}\n\nOpen the run to see which Jellyfin, Sonarr or Radarr version broke and the exact error.`;
+            const open = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: 'compatibility' });
+            const existing = open.data.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ ...context.repo, title, body, labels: ['compatibility'] });
+            }

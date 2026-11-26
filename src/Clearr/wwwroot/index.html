@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clearr</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="login" class="login hidden">
+    <form id="loginForm" class="login-box">
+        <img src="logo.svg" alt="" class="login-logo">
+        <h1>Clearr</h1>
+        <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" autofocus>
+        <button type="submit" class="btn primary">Sign in</button>
+        <div id="loginError" class="error-text"></div>
+    </form>
+</div>
+
+<div id="app" class="app hidden">
+    <nav class="sidebar">
+        <div class="brand"><img src="logo.svg" alt=""><span>Clearr</span></div>
+        <a href="#shows" data-page="shows" class="nav-link">Shows</a>
+        <a href="#movies" data-page="movies" class="nav-link">Movies</a>
+        <a href="#history" data-page="history" class="nav-link">History</a>
+        <a href="#settings" data-page="settings" class="nav-link">Settings</a>
+        <div class="sidebar-foot">
+            <div id="statusMode" class="mode-badge"></div>
+            <div id="statusNext" class="muted small"></div>
+            <div id="statusLast" class="muted small"></div>
+            <div class="muted small">v<span id="version"></span></div>
+            <a href="#" id="logout" class="muted small hidden">Sign out</a>
+        </div>
+    </nav>
+
+    <main class="content">
+        <div id="banner" class="banner hidden"></div>
+
+        <!-- ===== Shows & Movies share one toolbar ===== -->
+        <section data-section="shows movies" class="page">
+            <h1 id="libTitle">Shows</h1>
+            <div class="toolbar">
+                <select id="filter">
+                    <option value="all">All</option>
+                    <option value="ready">Ready to clear</option>
+                    <option value="flagged">Dropped-off viewers</option>
+                    <option value="watching">Someone is watching</option>
+                    <option value="untouched">Nobody started</option>
+                    <option value="kept">Kept</option>
+                    <option value="unmanaged">Not in Sonarr/Radarr</option>
+                </select>
+                <input type="search" id="search" placeholder="Search">
+                <button class="btn" id="refresh">Refresh</button>
+                <button class="btn" id="preview">Preview cleanup</button>
+                <button class="btn danger hidden" id="deleteNow">Delete eligible now</button>
+            </div>
+            <div id="modeNote" class="note"></div>
+            <div id="result" class="result hidden"></div>
+            <div id="warnings"></div>
+            <div id="summary" class="muted"></div>
+            <div id="list"></div>
+        </section>
+
+        <!-- ===== History ===== -->
+        <section data-section="history" class="page">
+            <h1>History</h1>
+            <div id="history"></div>
+        </section>
+
+        <!-- ===== Settings ===== -->
+        <section data-section="settings" class="page">
+            <h1>Settings</h1>
+            <form id="settingsForm" class="settings">
+                <h2>Connections</h2>
+                <div class="conn" data-conn="jellyfin">
+                    <h3>Jellyfin <span class="req">required</span></h3>
+                    <label>URL<input name="jellyfin.url" placeholder="http://192.168.1.6:8096"></label>
+                    <label>API key<input name="jellyfin.apiKey" type="password" placeholder="Dashboard → API Keys → +"></label>
+                    <button type="button" class="btn small test" data-test="jellyfin">Test</button><span class="test-result"></span>
+                </div>
+                <div class="conn" data-conn="sonarr">
+                    <h3>Sonarr <span class="opt">for shows</span></h3>
+                    <label>URL<input name="sonarr.url" placeholder="http://192.168.1.6:8989"></label>
+                    <label>API key<input name="sonarr.apiKey" type="password" placeholder="Settings → General → API Key"></label>
+                    <button type="button" class="btn small test" data-test="sonarr">Test</button><span class="test-result"></span>
+                </div>
+                <div class="conn" data-conn="radarr">
+                    <h3>Radarr <span class="opt">for movies</span></h3>
+                    <label>URL<input name="radarr.url" placeholder="http://192.168.1.6:7878"></label>
+                    <label>API key<input name="radarr.apiKey" type="password" placeholder="Settings → General → API Key"></label>
+                    <button type="button" class="btn small test" data-test="radarr">Test</button><span class="test-result"></span>
+                </div>
+                <p class="hint">Clearr only removes what Sonarr or Radarr manage. They delete the files, and Clearr unmonitors what's removed so it isn't downloaded again. Shows stay monitored, so new seasons still arrive.</p>
+
+                <h2>Cleanup</h2>
+                <label>Cleanup mode
+                    <select name="mode">
+                        <option value="Off">Off – only track and flag</option>
+                        <option value="DryRun">Dry run – log what would be removed</option>
+                        <option value="Delete">Delete – remove files</option>
+                    </select>
+                    <span class="hint">Applies to everything: the daily run and the "Delete eligible now" button. Nothing is ever removed unless this is Delete.</span>
+                </label>
+                <label>Daily run at<input name="scheduleTime" type="time"><span class="hint">Container time zone (set TZ in Docker).</span></label>
+                <label>Max GB removed per run<input name="maxDeleteGbPerRun" type="number" min="0"><span class="hint">0 = no limit. Anything over the limit waits for the next run.</span></label>
+                <label>Grace period (days after the last viewer finished)<input name="graceDays" type="number" min="0"></label>
+                <label class="check"><input type="checkbox" name="deleteSeasons"> Remove finished seasons</label>
+                <label class="check"><input type="checkbox" name="deleteShows"> Remove whole shows when finished</label>
+                <label class="check"><input type="checkbox" name="requireEndedForShowDelete"> Only remove whole shows that have Ended</label>
+                <label class="check"><input type="checkbox" name="protectLatestSeasonOfContinuing"> Never remove the newest season of a continuing show</label>
+                <label class="check"><input type="checkbox" name="deleteMovies"> Remove finished movies</label>
+                <label class="check"><input type="checkbox" name="includeSpecials"> Count specials (season 0)</label>
+                <label class="check"><input type="checkbox" name="refreshJellyfinAfterCleanup"> Refresh the Jellyfin library after a cleanup</label>
+                <label>Keep tag<input name="keepTag"><span class="hint">Items with this tag in Jellyfin, Sonarr or Radarr are never removed. Keep buttons in Clearr add it in Sonarr/Radarr too.</span></label>
+
+                <h2>Dropped-off viewers</h2>
+                <label>Flag a viewer after this many days without progress<input name="inactiveDays" type="number" min="1"></label>
+                <label>"Sampled" means watched at most this many episodes<input name="sampledMaxEpisodes" type="number" min="0"><span class="hint">More than that is "Stalled". "Mid-episode" is added if they stopped partway through.</span></label>
+                <label class="check"><input type="checkbox" name="abandonedUsersBlockCleanup"> Dropped-off viewers still hold back cleanup</label>
+
+                <h2>Users</h2>
+                <p class="hint">Ticked users are ignored completely (for example a test or kids account).</p>
+                <div id="users" class="users"></div>
+
+                <h2>Security</h2>
+                <p class="hint" id="pwState"></p>
+                <label>New password<input id="newPassword" type="password" autocomplete="new-password" placeholder="Leave empty to keep"></label>
+                <label class="check hidden" id="clearPwRow"><input type="checkbox" id="clearPassword"> Remove the password</label>
+                <label>API key <span class="hint">(for scripts / Home Assistant: X-Api-Key header)</span><input id="apiKey" readonly></label>
+
+                <div class="save-row"><button type="submit" class="btn primary">Save</button><span id="saveMsg"></span></div>
+            </form>
+        </section>
+    </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

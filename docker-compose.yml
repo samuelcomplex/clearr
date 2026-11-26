@@ -1,0 +1,11 @@
+services:
+  clearr:
+    image: ghcr.io/samuelcomplex/clearr:latest
+    container_name: clearr
+    environment:
+      - TZ=Europe/Stockholm   # the daily run uses this time zone
+    volumes:
+      - ./clearr:/config      # settings, keep list and history
+    ports:
+      - 6565:6565
+    restart: unless-stopped

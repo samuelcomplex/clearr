@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2523"/><stop offset="1" stop-color="#121615"/></linearGradient>
+    <radialGradient id="glow" cx="0.32" cy="0.5" r="0.5"><stop offset="0" stop-color="#2bc4a5" stop-opacity="0.22"/><stop offset="1" stop-color="#2bc4a5" stop-opacity="0"/></radialGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5fe3c4"/><stop offset="1" stop-color="#1e9c83"/></linearGradient>
+    <linearGradient id="gi" gradientUnits="userSpaceOnUse" x1="6" y1="6" x2="58" y2="58"><stop offset="0" stop-color="#5fe3c4"/><stop offset="1" stop-color="#1e9c83"/></linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect width="1280" height="720" fill="url(#glow)"/>
+  <g transform="translate(134,170) scale(5.9)">
+    <g fill="none" stroke="url(#gi)" stroke-width="7" stroke-linecap="round">
+      <path d="M38.73 6.89 A26 26 0 0 1 57.11 38.73"/>
+    <path d="M50.38 50.38 A26 26 0 0 1 13.62 50.38"/>
+    <path d="M6.89 38.73 A26 26 0 0 1 25.27 6.89"/>
+    </g>
+    <path d="M21 33 L29 41 L44 24" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g font-family="'Segoe UI','Noto Sans','DejaVu Sans',Arial,sans-serif">
+    <text x="569" y="395" font-size="168" font-weight="700" fill="#ffffff" letter-spacing="-3">Clear<tspan fill="url(#g)">r</tspan></text>
+    <text x="575" y="460" font-size="38" fill="#9fb3ad">Cleared when everyone's done</text>
+  </g>
+</svg>
