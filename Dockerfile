@@ -7,7 +7,7 @@ COPY src/Clearr.Core/Clearr.Core.csproj src/Clearr.Core/
 RUN dotnet restore src/Clearr/Clearr.csproj
 COPY src/Clearr/ src/Clearr/
 COPY src/Clearr.Core/ src/Clearr.Core/
-ARG VERSION=0.1.0
+ARG VERSION=0.2.0
 RUN dotnet publish src/Clearr/Clearr.csproj -c Release -o /app -p:UseAppHost=false -p:Version=$VERSION
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine

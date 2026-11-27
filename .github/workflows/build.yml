@@ -90,7 +90,7 @@ jobs:
       - name: Version
         id: v
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"; else echo "version=0.1.0" >> "$GITHUB_OUTPUT"; fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"; else echo "version=$(grep -oPm1 '(?<=<Version>)[^<]+' src/Clearr/Clearr.csproj)" >> "$GITHUB_OUTPUT"; fi
       - uses: docker/build-push-action@v6
         with:
           context: .
