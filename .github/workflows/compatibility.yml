@@ -32,8 +32,8 @@ jobs:
           - { jellyfin: latest,     arr: latest,  experimental: false }
           - { jellyfin: unstable,   arr: develop, experimental: true }
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -90,7 +90,7 @@ jobs:
     if: failure() && github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         with:
           script: |
             const title = 'Compatibility check failed';
