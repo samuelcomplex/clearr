@@ -125,7 +125,7 @@
             '  <div data-el="list"></div>' +
             '</section>' +
 
-            '<section class="cl-page" data-page="history"><h1>' + e('nav.history') + '</h1><div data-el="history"></div></section>' +
+            '<section class="cl-page" data-page="history"><h1>' + e('nav.history') + '</h1><div data-el="stats"></div><div data-el="history"></div></section>' +
 
             (app ? '<section class="cl-page" data-page="logs"><h1>' + e('nav.logs') + '</h1>' +
                 '<div class="cl-toolbar"><button class="cl-btn" data-el="refreshLogs">' + e('library.refresh') + '</button><span class="cl-muted cl-small" data-el="logFiles"></span></div>' +
@@ -553,9 +553,49 @@
             });
         }
 
+        // ------------------------------------------------------------ statistics
+        function renderStats(list) {
+            var deleted = list.filter(function (h) { return h.action === 'Deleted'; });
+            if (!deleted.length) { el('stats').innerHTML = ''; return; }
+            var total = deleted.reduce(function (n, h) { return n + (h.bytes || 0); }, 0);
+            var months = [];
+            var now = new Date();
+            for (var i = 11; i >= 0; i--) {
+                var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                months.push({ key: d.getFullYear() + '-' + d.getMonth(), label: d.toLocaleDateString(current, { month: 'short', year: '2-digit' }), items: 0, bytes: 0 });
+            }
+            deleted.forEach(function (h) {
+                var d = new Date(h.date);
+                var m = months.filter(function (x) { return x.key === d.getFullYear() + '-' + d.getMonth(); })[0];
+                if (m) { m.items++; m.bytes += h.bytes || 0; }
+            });
+            var max = Math.max.apply(null, months.map(function (m) { return m.bytes; }).concat([1]));
+            el('stats').innerHTML = '<h2>' + e('stats.title') + '</h2>' +
+                '<p>' + e('stats.total', { count: deleted.length, size: fmtSize(total) }) + '</p>' +
+                '<table class="cl-table cl-stats"><thead><tr><th>' + e('stats.month') + '</th><th>' + e('stats.removed') + '</th><th>' + e('history.size') + '</th><th></th></tr></thead><tbody>' +
+                months.map(function (m) {
+                    return '<tr><td>' + esc(m.label) + '</td><td>' + (m.items || '') + '</td><td>' + (m.bytes ? fmtSize(m.bytes) : '') + '</td>' +
+                        '<td class="cl-bar-cell"><span class="cl-bar" style="width:' + Math.round(100 * m.bytes / max) + '%"></span></td></tr>';
+                }).join('') + '</tbody></table>' +
+                '<h3>' + e('stats.dropped') + '</h3><div data-el="dropped"><span class="cl-muted cl-small">' + e('settings.loadingUsers') + '</span></div>';
+            var drawDropped = function (r) {
+                var rows = r.shows.concat(r.movies.map(function (m) { return { name: m.name + (m.year ? ' (' + m.year + ')' : ''), users: m.users }; }))
+                    .map(function (x) { return { name: x.name, n: x.users.filter(function (u) { return u.flags.length; }).length }; })
+                    .filter(function (x) { return x.n > 0; })
+                    .sort(function (a, b) { return b.n - a.n || a.name.localeCompare(b.name); })
+                    .slice(0, 10);
+                el('dropped').innerHTML = rows.length
+                    ? '<table class="cl-table"><tbody>' + rows.map(function (x) { return '<tr><td>' + esc(x.name) + '</td><td>' + e('stats.droppedBy', { count: x.n }) + '</td></tr>'; }).join('') + '</tbody></table>'
+                    : '<p class="cl-muted">' + e('stats.droppedNone') + '</p>';
+            };
+            if (state.report) drawDropped(state.report);
+            else api('report').then(function (r) { state.report = r; drawDropped(r); }).catch(function (err) { el('dropped').textContent = err.message; });
+        }
+
         // ------------------------------------------------------------ history
         function loadHistory() {
             api('history').then(function (list) {
+                renderStats(list);
                 if (!list.length) { el('history').innerHTML = '<p class="cl-muted">' + e('history.empty') + '</p>'; return; }
                 el('history').innerHTML = '<table class="cl-table"><thead><tr><th>' + e('history.when') + '</th><th>' + e('history.action') + '</th><th>' + e('history.what') + '</th><th>' + e('history.size') + '</th><th>' + e('history.detail') + '</th></tr></thead><tbody>' +
                     list.map(function (h) {

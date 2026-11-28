@@ -260,5 +260,12 @@
   "settings.freeSpace": "Only clean up below this much free space (GB)",
   "settings.freeSpaceHint": "0 = off: everything finished is cleared. Otherwise Clearr only removes from a drive with less free space than this, the longest-finished first, and stops once the drive is back above it. Free space is what Sonarr and Radarr report.",
   "outcome.enoughSpace": "Enough free space: {free} GB free on {drive} (target {target} GB)",
-  "outcome.driveUnknown": "Kept: its drive's free space is unknown, and a free-space target is set"
+  "outcome.driveUnknown": "Kept: its drive's free space is unknown, and a free-space target is set",
+  "stats.title": "Statistics",
+  "stats.total": "{count} items removed so far, {size} freed.",
+  "stats.month": "Month",
+  "stats.removed": "Removed",
+  "stats.dropped": "Dropped most often",
+  "stats.droppedBy": "{count} viewers dropped off",
+  "stats.droppedNone": "Nobody has dropped off anything."
 }

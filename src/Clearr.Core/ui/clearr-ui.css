@@ -101,3 +101,7 @@
 .clearr .cl-log-more { color: var(--cl-muted); padding-left: 2em; }
 
 .clearr .cl-restart-row { margin-top: 14px; }
+
+.clearr .cl-stats td { padding: 4px 8px; }
+.clearr .cl-bar-cell { width: 45%; }
+.clearr .cl-bar { display: block; height: 10px; border-radius: 3px; background: var(--cl-accent); min-width: 0; }

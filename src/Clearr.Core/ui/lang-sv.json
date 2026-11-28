@@ -260,5 +260,12 @@
   "settings.freeSpace": "Rensa bara under så här mycket ledigt utrymme (GB)",
   "settings.freeSpaceHint": "0 = av: allt färdigsett rensas. Annars tar Clearr bara bort från en disk med mindre ledigt utrymme än så, det som blev färdigsett först, och slutar när disken är över gränsen igen. Ledigt utrymme är det Sonarr och Radarr rapporterar.",
   "outcome.enoughSpace": "Tillräckligt ledigt: {free} GB ledigt på {drive} (mål {target} GB)",
-  "outcome.driveUnknown": "Behålls: diskens lediga utrymme är okänt och ett mål för ledigt utrymme är satt"
+  "outcome.driveUnknown": "Behålls: diskens lediga utrymme är okänt och ett mål för ledigt utrymme är satt",
+  "stats.title": "Statistik",
+  "stats.total": "{count} objekt borttagna hittills, {size} frigjort.",
+  "stats.month": "Månad",
+  "stats.removed": "Borttaget",
+  "stats.dropped": "Oftast avbrutet",
+  "stats.droppedBy": "{count} tittare slutade",
+  "stats.droppedNone": "Ingen har slutat titta på något."
 }
