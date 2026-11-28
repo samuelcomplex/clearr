@@ -44,6 +44,7 @@ The first public release.
 
 ### Keeping
 - Favourites in Jellyfin are kept automatically (Keep favourites, on by default).
+- Optional free-space target: only clean up drives that are running low, longest-finished first, stopping once there's enough room.
 - Whole Sonarr/Radarr root folders (a Kids or Anime folder, say) can be kept from Settings.
 
 [Unreleased]: https://github.com/samuelcomplex/clearr/commits/main

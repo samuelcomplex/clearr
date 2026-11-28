@@ -199,6 +199,31 @@ internal static class SafetyTests
         Expect(sonarrRoots.Contains("/media/kids/") && sonarrRoots.Contains("/media/tv/") && radarrRoots.SequenceEqual(new[] { "/media/kids-movies" }), "Root folders listed from Sonarr and Radarr");
         await envr.StopAsync();
 
+        // Free-space target: only drives below it are cleaned, oldest-finished first, stopping once above it.
+        var bd = new WorldBuilder(seed: 8);
+        bd.User("u1", "Anna");
+        var old = bd.Show("Finished Long Ago", "Ended", new[] { 2 }, inSonarr: true, gbPerFile: 5, root: "/data/tv/");
+        var mid = bd.Show("Finished Last Month", "Ended", new[] { 2 }, inSonarr: true, gbPerFile: 5, root: "/data/tv/");
+        var recent = bd.Show("Finished Last Week", "Ended", new[] { 2 }, inSonarr: true, gbPerFile: 5, root: "/data/tv/");
+        var roomy = bd.Movie("On The Roomy Drive", inRadarr: true, gb: 10, root: "/big/movies");
+        bd.WatchAll("u1", old, 90);
+        bd.WatchAll("u1", recent, 10);
+        bd.WatchAll("u1", mid, 30);
+        bd.WatchMovie("u1", roomy, true, 60);
+        bd.World.Disks.Clear();
+        bd.World.Disks.Add(("/data", 92L * GB)); // 8 GB short of 100
+        bd.World.Disks.Add(("/big", 400L * GB));
+        var envd = await Env.StartAsync(bd.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.Delete, FreeSpaceTargetGb = 100, MaxDeleteGbPerRun = 0 });
+        var spacePreview = await envd.Engine.CleanupAsync(true, false, default);
+        Expect(spacePreview.Actions.Where(a => a.Action == "WouldDelete").Select(a => a.Title).SequenceEqual(new[] { "Finished Long Ago" }), "Free-space target: the preview removes just enough, oldest-finished first");
+        var spaceRun = await envd.Engine.CleanupAsync(false, true, default);
+        Expect(!bd.World.EpisodeFiles.Any(f => f.SeriesId == old.SonarrId) && bd.World.EpisodeFiles.Any(f => f.SeriesId == mid.SonarrId) && bd.World.EpisodeFiles.Any(f => f.SeriesId == recent.SonarrId), "Free-space target: stops once the drive is above it");
+        Expect(bd.World.RadarrMovies[roomy.RadarrId!.Value]["movieFile"] != null && spaceRun.Actions.Single(a => a.Title.StartsWith("On The Roomy Drive")).Parts.Any(p => p.Code == "outcome.enoughSpace"), "Free-space target: a drive with enough space is left alone");
+        bd.World.Disks.Clear();
+        var noDisks = await envd.Engine.CleanupAsync(true, false, default);
+        Expect(noDisks.Actions.All(a => a.Action == "Skipped") && noDisks.Actions.Any(a => a.Parts.Any(p => p.Code == "outcome.driveUnknown")), "Free-space target: when the drive's space is unknown, nothing is removed");
+        await envd.StopAsync();
+
         // Grace period, someone still watching, someone who never started.
         var b4 = new WorldBuilder(seed: 4);
         b4.User("u1", "Anna");
@@ -289,6 +314,7 @@ internal static class SafetyTests
                 MaxDeleteGbPerRun = new[] { 0, 2, 5, 12, 50 }[rnd.Next(5)],
                 ExcludedUserIds = users.Where(_ => rnd.Next(5) == 0).ToList(),
                 KeepFavorites = rnd.Next(3) > 0,
+                FreeSpaceTargetGb = rootRnd.Next(6) == 0 ? 600 : 0, // the fake drive has 500 GB free: a target above it means "clean as usual, oldest first"
                 ExcludedRootFolders = rootRnd.Next(8) switch { 0 or 1 => new() { "/KIDS", "/kids-movies/" }, 2 => new() { "/tv" }, _ => new() },
             };
             var dryRun = rnd.Next(5) == 0;

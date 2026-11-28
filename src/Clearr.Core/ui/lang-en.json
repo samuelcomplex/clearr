@@ -256,5 +256,9 @@
   "roots.none": "Connect Sonarr or Radarr to see their root folders.",
   "roots.missing": "no longer in Sonarr/Radarr",
   "keptBy.Root folder": "root folder",
-  "keep.rootFolder": "Kept because its root folder is kept in Settings"
+  "keep.rootFolder": "Kept because its root folder is kept in Settings",
+  "settings.freeSpace": "Only clean up below this much free space (GB)",
+  "settings.freeSpaceHint": "0 = off: everything finished is cleared. Otherwise Clearr only removes from a drive with less free space than this, the longest-finished first, and stops once the drive is back above it. Free space is what Sonarr and Radarr report.",
+  "outcome.enoughSpace": "Enough free space: {free} GB free on {drive} (target {target} GB)",
+  "outcome.driveUnknown": "Kept: its drive's free space is unknown, and a free-space target is set"
 }

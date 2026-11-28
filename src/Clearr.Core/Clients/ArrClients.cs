@@ -35,6 +35,13 @@ public abstract class ArrClientBase
         return string.IsNullOrWhiteSpace(root) ? null : root;
     }
 
+    /// <summary>Free space per drive, as Sonarr/Radarr see it.</summary>
+    public async Task<List<(string Path, long Free)>> DiskSpaceAsync(CancellationToken ct) =>
+        (await Api.GetAsync("api/v3/diskspace", ct)).Arr()
+            .Select(d => (Path: d.Str("path") ?? "", Free: d.Long("freeSpace")))
+            .Where(d => d.Path.Length > 0)
+            .ToList();
+
     /// <summary>The root folders set up in Sonarr/Radarr.</summary>
     public async Task<List<string>> RootFoldersAsync(CancellationToken ct) =>
         (await Api.GetAsync("api/v3/rootfolder", ct)).Arr().Select(r => r.Str("path")).OfType<string>().Where(p => p.Length > 0).ToList();

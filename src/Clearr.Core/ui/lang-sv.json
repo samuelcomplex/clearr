@@ -256,5 +256,9 @@
   "roots.none": "Anslut Sonarr eller Radarr för att se deras rotmappar.",
   "roots.missing": "finns inte längre i Sonarr/Radarr",
   "keptBy.Root folder": "rotmapp",
-  "keep.rootFolder": "Behålls eftersom dess rotmapp behålls i inställningarna"
+  "keep.rootFolder": "Behålls eftersom dess rotmapp behålls i inställningarna",
+  "settings.freeSpace": "Rensa bara under så här mycket ledigt utrymme (GB)",
+  "settings.freeSpaceHint": "0 = av: allt färdigsett rensas. Annars tar Clearr bara bort från en disk med mindre ledigt utrymme än så, det som blev färdigsett först, och slutar när disken är över gränsen igen. Ledigt utrymme är det Sonarr och Radarr rapporterar.",
+  "outcome.enoughSpace": "Tillräckligt ledigt: {free} GB ledigt på {drive} (mål {target} GB)",
+  "outcome.driveUnknown": "Behålls: diskens lediga utrymme är okänt och ett mål för ledigt utrymme är satt"
 }

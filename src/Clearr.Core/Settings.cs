@@ -97,6 +97,9 @@ public class ClearrSettings
     public bool IncludeSpecials { get; set; }
     public int GraceDays { get; set; } = 7;
     public int MaxDeleteGbPerRun { get; set; } = 50;
+
+    /// <summary>0 = off. Otherwise only remove while a drive has less free space than this, longest-finished first.</summary>
+    public int FreeSpaceTargetGb { get; set; }
     public string KeepTag { get; set; } = "keep";
 
     /// <summary>Anything a tracked user marked as a favourite in Jellyfin (show, season or movie) is never removed.</summary>

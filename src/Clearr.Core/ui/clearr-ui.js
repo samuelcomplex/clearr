@@ -156,6 +156,7 @@
             '<h3>' + e('settings.both') + '</h3>' +
             '<label>' + e('settings.maxGb') + '<input name="maxDeleteGbPerRun" type="number" min="0"><span class="cl-hint">' + e('settings.maxGbHint') + '</span></label>' +
             '<label>' + e('settings.grace') + '<input name="graceDays" type="number" min="0"></label>' +
+            '<label>' + e('settings.freeSpace') + '<input name="freeSpaceTargetGb" type="number" min="0"><span class="cl-hint">' + e('settings.freeSpaceHint') + '</span></label>' +
             check('refreshJellyfinAfterCleanup', 'settings.refreshJellyfin') +
             '<label>' + e('settings.keepTag') + '<input name="keepTag"><span class="cl-hint">' + e('settings.keepTagHint') + '</span></label>' +
             check('keepFavorites', 'settings.keepFavorites') +

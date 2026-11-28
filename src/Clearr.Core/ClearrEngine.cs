@@ -195,7 +195,44 @@ public sealed class ClearrEngine : IDisposable
 
     // ---------------------------------------------------------------- cleanup
 
-    private sealed record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, Msg Reason, int? ArrId, ShowInfo? Show, RadarrMovie? Movie, DirectTarget? Direct);
+    private sealed record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, Msg Reason, int? ArrId, ShowInfo? Show, RadarrMovie? Movie, DirectTarget? Direct)
+    {
+        /// <summary>When the last viewer finished it (oldest first when cleaning up for free space).</summary>
+        public DateTime? FinishedAt { get; init; }
+
+        public string? Root => Movie?.Item.RootFolder ?? Show?.ArrRootFolder;
+    }
+
+    private static DateTime? LastFinished(IEnumerable<UserProgress> users) =>
+        users.Where(u => u.FinishedAt.HasValue).Select(u => u.FinishedAt).DefaultIfEmpty(null).Max();
+
+    /// <summary>A drive's free space during a run; removals add to it as they're planned.</summary>
+    private sealed class Drive
+    {
+        public Drive(string path, long free)
+        {
+            Path = path;
+            Free = free;
+        }
+
+        public string Path { get; }
+
+        public long Free { get; set; }
+    }
+
+    private static Drive? DriveFor(string? root, List<Drive> drives)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        var r = root.Replace('\\', '/').TrimEnd('/') + "/";
+        return drives
+            .Where(d => r.StartsWith(d.Path.Replace('\\', '/').TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(d => d.Path.Length)
+            .FirstOrDefault();
+    }
 
     private static CleanupScope KindOf(Work w) => w.Kind == "Movie" ? CleanupScope.Movies : CleanupScope.Shows;
 
@@ -302,12 +339,12 @@ public sealed class ClearrEngine : IDisposable
 
                 if (s.DeleteShows && sr.Eligible)
                 {
-                    work.Add(new Work("Show", sr.Name, null, null, sr.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Show", sr.ShowId, null, null)));
+                    work.Add(new Work("Show", sr.Name, null, null, sr.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Show", sr.ShowId, null, null)) { FinishedAt = LastFinished(sr.Users) });
                 }
                 else if (s.DeleteSeasons)
                 {
                     work.AddRange(sr.Seasons.Where(x => x.Eligible && x.Number.HasValue)
-                        .Select(x => new Work("Season", sr.Name, x.Name, x.Number, x.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Season", sr.ShowId, x.SeasonId, x.Number))));
+                        .Select(x => new Work("Season", sr.Name, x.Name, x.Number, x.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Season", sr.ShowId, x.SeasonId, x.Number)) { FinishedAt = LastFinished(x.Users) }));
                 }
             }
 
@@ -319,11 +356,11 @@ public sealed class ClearrEngine : IDisposable
                     if (mr.Via == "Radarr")
                     {
                         var rm = mr.ArrId is int rid ? radarrById.GetValueOrDefault(rid) : null;
-                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, mr.ArrId, null, rm, null));
+                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, mr.ArrId, null, rm, null) { FinishedAt = LastFinished(mr.Users) });
                     }
                     else
                     {
-                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, null, null, null, new DirectTarget("Movie", mr.MovieId, null, null)));
+                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, null, null, null, new DirectTarget("Movie", mr.MovieId, null, null)) { FinishedAt = LastFinished(mr.Users) });
                     }
                 }
             }
@@ -331,6 +368,36 @@ public sealed class ClearrEngine : IDisposable
             var sonarr = s.Sonarr.IsConfigured ? new SonarrClient(Http(), s.Sonarr) : null;
             var radarr = s.Radarr.IsConfigured ? new RadarrClient(Http(), s.Radarr) : null;
             var cap = s.MaxDeleteGbPerRun > 0 ? s.MaxDeleteGbPerRun * 1024L * 1024L * 1024L : long.MaxValue;
+
+            // Free-space target: only clean up drives that need it, oldest-finished first.
+            var target = s.FreeSpaceTargetGb > 0 ? s.FreeSpaceTargetGb * 1024L * 1024L * 1024L : 0;
+            var drives = new List<Drive>();
+            if (target > 0)
+            {
+                work = work.OrderBy(x => x.FinishedAt ?? DateTime.MaxValue).ToList();
+                foreach (var (client, needed) in new (ArrClientBase? Client, bool Needed)[] { (sonarr, work.Any(x => x.Kind != "Movie")), (radarr, work.Any(x => x.Kind == "Movie")) })
+                {
+                    if (client == null || !needed)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        foreach (var (path, free) in await client.DiskSpaceAsync(ct))
+                        {
+                            if (!drives.Any(d => string.Equals(d.Path, path, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                drives.Add(new Drive(path, free));
+                            }
+                        }
+                    }
+                    catch (ApiException ex)
+                    {
+                        _log.LogWarning("Free space not available: {Message}", ex.Message);
+                    }
+                }
+            }
 
             // Each show's file list from Sonarr, fetched side by side (a season and its show share one list).
             var episodeFiles = new Dictionary<int, Task<List<EpisodeFile>>>();
@@ -423,6 +490,25 @@ public sealed class ClearrEngine : IDisposable
                     // The size limit covers what this run removes (or, in a preview, would remove).
                     if (dryRun || act)
                     {
+                        Drive? drive = null;
+                        if (target > 0)
+                        {
+                            drive = DriveFor(w.Root, drives);
+                            if (drive == null)
+                            {
+                                Skip(entry, new Msg("outcome.driveUnknown"));
+                                result.Actions.Add(entry);
+                                continue;
+                            }
+
+                            if (drive.Free >= target)
+                            {
+                                Skip(entry, new Msg("outcome.enoughSpace", new() { ["free"] = Math.Round(drive.Free / 1073741824.0, 1), ["target"] = s.FreeSpaceTargetGb, ["drive"] = drive.Path }));
+                                result.Actions.Add(entry);
+                                continue;
+                            }
+                        }
+
                         if (planned > 0 && planned + entry.Bytes > cap)
                         {
                             Skip(entry, new Msg("outcome.limit", new() { ["gb"] = s.MaxDeleteGbPerRun }));
@@ -431,6 +517,10 @@ public sealed class ClearrEngine : IDisposable
                         }
 
                         planned += entry.Bytes;
+                        if (drive != null)
+                        {
+                            drive.Free += entry.Bytes;
+                        }
                     }
 
                     if (!act)
@@ -631,6 +721,7 @@ public static class SettingsRules
         s.InactiveDays = Math.Max(1, s.InactiveDays);
         s.SampledMaxEpisodes = Math.Max(0, s.SampledMaxEpisodes);
         s.MaxDeleteGbPerRun = Math.Max(0, s.MaxDeleteGbPerRun);
+        s.FreeSpaceTargetGb = Math.Max(0, s.FreeSpaceTargetGb);
         s.KeepTag = (s.KeepTag ?? "").Trim();
         s.ExcludedUserIds ??= new();
         s.ExcludedRootFolders = (s.ExcludedRootFolders ?? new()).Select(RootFolders.Normalize).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();

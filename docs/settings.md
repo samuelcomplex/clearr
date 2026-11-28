@@ -45,6 +45,7 @@ Nothing is ever removed unless that kind's mode is **Delete**, and the mode is c
 | Setting | Default | |
 |---|---|---|
 | **Max GB removed per run** | 50 | Anything over the limit waits for the next run. 0 = no limit. The first item of a run is always allowed, even if it's bigger than the limit on its own. Only what a run actually removes counts towards it. |
+| **Only clean up below this much free space** | 0 (off) | When set, Clearr only removes from a drive with less free space than this many GB, starting with what was finished longest ago, and stops as soon as the drive is back above it. Drives with enough space are left alone. Free space comes from Sonarr's and Radarr's *System → Status → Disk Space*; an item whose drive isn't listed there is kept (this includes items the plugin removes through Jellyfin). The per-run limit still applies. |
 | **Grace period** | 7 days | Time between the last viewer finishing and the removal. |
 | **Refresh the Jellyfin library after a cleanup** | On | So removed items disappear from Jellyfin straight away. |
 | **Keep tag** | `keep` | Items with this tag in Jellyfin, Sonarr or Radarr are never removed. Case doesn't matter. |

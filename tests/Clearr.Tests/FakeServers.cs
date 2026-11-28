@@ -43,6 +43,9 @@ public class FakeWorld
 
     public int Requests;
 
+    /// <summary>Drives reported by /api/v3/diskspace (both Sonarr and Radarr).</summary>
+    public List<(string Path, long Free)> Disks { get; } = new() { ("/", 500L * 1073741824) };
+
     /// <summary>Notifications received: (path, headers, body).</summary>
     public List<(string Path, Dictionary<string, string> Headers, string Body)> Notifications { get; } = new();
 
@@ -179,6 +182,11 @@ public static class FakeServers
         }
 
         Arr("sonarr", "sonarr-key", w.SonarrTags);
+        foreach (var prefix in new[] { "sonarr", "radarr" })
+        {
+            app.MapGet($"/{prefix}/api/v3/diskspace", () => Results.Json(w.Disks.Select(d => new { path = d.Path, label = "", freeSpace = d.Free, totalSpace = d.Free * 2 })));
+        }
+
         app.MapGet("/sonarr/api/v3/rootfolder", () => Results.Json(w.SonarrSeries.Values.Select(v => v["rootFolderPath"]?.GetValue<string>()).OfType<string>().Distinct().Select((p, i) => new { id = i + 1, path = p })));
         app.MapGet("/radarr/api/v3/rootfolder", () => Results.Json(w.RadarrMovies.Values.Select(v => v["rootFolderPath"]?.GetValue<string>()).OfType<string>().Distinct().Select((p, i) => new { id = i + 1, path = p })));
         app.MapGet("/sonarr/api/v3/series", (HttpContext c) => ArrAuth(c, "sonarr-key") ? Results.Text(new JsonArray(w.SonarrSeries.Values.Select(v => v.DeepClone()).ToArray()).ToJsonString(), "application/json") : Results.StatusCode(401));
