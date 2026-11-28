@@ -19,7 +19,9 @@ COPY --from=build /app .
 COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
 COPY --chmod=755 docker/healthcheck.sh /healthcheck.sh
 # PUID/PGID: the user Clearr runs as and owns /config with (linuxserver.io convention).
+# ASPNETCORE_HTTP_PORTS: the .NET image's default (8080) is cleared; Clearr opens its own ports (CLEARR_PORT, HTTPS in Settings).
 ENV CLEARR_PORT=8585 \
+    ASPNETCORE_HTTP_PORTS= \
     CLEARR_CONFIG_DIR=/config \
     TZ=Etc/UTC \
     PUID=1000 \
