@@ -47,8 +47,8 @@ jobs:
           docker logs clearr
           [ "$s" = healthy ] || { echo "not healthy: $s"; exit 1; }
           curl -sf http://localhost:8585/ping | grep -qx ok
-          if docker logs clearr 2>&1 | grep -E "Overriding address|\|Warn\||\|Error\|"; then echo "unexpected warnings at startup"; exit 1; fi
-          docker logs clearr 2>&1 | grep -q "running as user (1234:2345)\|running as .* (1234:2345)"
+          if docker logs clearr 2>&1 | grep -E "Overriding address|^warn:|^fail:|^crit:"; then echo "unexpected warnings at startup"; exit 1; fi
+          docker logs clearr 2>&1 | grep -q "running as .*(1234:2345)"
           docker exec clearr sh -c 'grep -E "^(Uid|Gid):" /proc/1/status' | tee ids.txt
           grep -qE "^Uid:\s+1234" ids.txt && grep -qE "^Gid:\s+2345" ids.txt
           stat -c '%n %u:%g %a' "$RUNNER_TEMP"/cfg/* | tee files.txt
