@@ -86,7 +86,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<Scheduler>());
 var app = builder.Build();
 _ = app.Services.GetRequiredService<AuthService>(); // creates api.key and session.key at startup
 var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Clearr.Startup");
-startupLog.LogInformation("Clearr {Version} starting; config in {Config}, running as {User}", typeof(Program).Assembly.GetName().Version?.ToString(3), startupPaths.Root, Environment.UserName);
+startupLog.LogInformation("Clearr {Version} starting; config in {Config}, running as {User}", typeof(Program).Assembly.GetName().Version?.ToString(3), startupPaths.Root, RunningAs());
 if (settingsStore.Notice is Msg notice)
 {
     startupLog.LogWarning("{Notice}", notice.ToString());
@@ -352,4 +352,20 @@ app.Run();
 
 public partial class Program
 {
+    /// <summary>"name (uid:gid)" on Linux; PUID users often have no name inside the container.</summary>
+    private static string RunningAs()
+    {
+        try
+        {
+            var ids = File.ReadAllLines("/proc/self/status")
+                .Where(l => l.StartsWith("Uid:", StringComparison.Ordinal) || l.StartsWith("Gid:", StringComparison.Ordinal))
+                .Select(l => l.Split('\t', StringSplitOptions.RemoveEmptyEntries)[1]).ToList();
+            var name = Environment.UserName;
+            return (string.IsNullOrEmpty(name) ? "user" : name) + (ids.Count == 2 ? $" ({ids[0]}:{ids[1]})" : "");
+        }
+        catch (IOException)
+        {
+            return Environment.UserName;
+        }
+    }
 }
