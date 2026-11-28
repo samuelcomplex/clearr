@@ -614,8 +614,8 @@
                     seen.push(norm(path));
                     rows.push('<label class="cl-check"><input type="checkbox" class="cl-root" value="' + esc(path) + '"' + (isOut(path) ? ' checked' : '') + '> ' + e('roots.leaveOut', { path: path, from: from }) + '</label>');
                 };
-                r.sonarr.forEach(function (p) { add(p, 'Sonarr'); });
-                r.radarr.forEach(function (p) { add(p, 'Radarr'); });
+                (r.sonarr || []).forEach(function (p) { add(p, 'Sonarr'); });
+                (r.radarr || []).forEach(function (p) { add(p, 'Radarr'); });
                 excluded.forEach(function (p) { add(p, t('roots.missing')); });
                 el('roots').innerHTML = rows.length ? rows.join('') : '<span class="cl-muted cl-small">' + e('roots.none') + '</span>';
             }).catch(function (err) { el('roots').innerHTML = '<span class="cl-error">' + esc(err.message) + '</span>'; });

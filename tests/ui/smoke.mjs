@@ -23,8 +23,9 @@ const answers = {
     { date: "2026-11-25T04:00:00Z", action: "WouldDelete", kind: "Season", title: "Show", seasonName: "Season 1", bytes: 3221225472, detail: "Finished by Anna", parts: [{ code: "reason.ready", args: { names: "Anna" } }] },
     { date: "2026-11-20T04:00:00Z", action: "Deleted", kind: "Movie", title: "Old entry", bytes: 1073741824, detail: "From before translations" },
   ],
-  settings: { settings: { showsMode: "DryRun", moviesMode: "Delete", language: "", sonarr: { url: "", apiKey: "" }, radarr: { url: "", apiKey: "" }, jellyfin: { url: "", apiKey: "" }, https: { enabled: false, port: 8586 }, excludedUserIds: [], debugLogging: true }, hasPassword: false, apiKey: "k" },
+  settings: { settings: { showsMode: "DryRun", moviesMode: "Delete", language: "", sonarr: { url: "", apiKey: "" }, radarr: { url: "", apiKey: "" }, jellyfin: { url: "", apiKey: "" }, https: { enabled: false, port: 8586 }, excludedUserIds: [], excludedRootFolders: ["/KIDS"], notifications: { ntfyUrl: "" }, debugLogging: true }, hasPassword: false, apiKey: "k" },
   users: [{ id: "u1", name: "Anna" }],
+  rootfolders: { sonarr: ["/tv/", "/kids/"], radarr: ["/movies"] },
   "logs?lines=1000": { files: [{ name: "clearr.txt", size: 2048 }], lines: ["2026-11-26 10:00:00.000|Warn|Engine|Sonarr <script>bad()</script> slow", "   at Something.Trace()"] },
 };
 
@@ -65,6 +66,7 @@ for (const [host, lang, jf, expect] of [["app", "en-US", null, "en"], ["plugin",
   check(seen.shows.text.includes(L["reason.ready"].replace("{names}", "Anna")) && seen.movies.text.includes(L["reason.waiting"].replace("{people}", "Anna (0/1, " + L["flagInline.Sampled"] + ")")), `${tag}: reasons rendered from codes`);
   check(seen.shows.deleteHidden && !seen.movies.deleteHidden && seen.shows.text.includes(L["modeFor.shows"].replace("{mode}", L["modeName.DryRun"])) && seen.movies.text.includes(L["modeFor.movies"].replace("{mode}", L["modeName.Delete"])), `${tag}: each page follows its own mode (shows Dry run: no delete button; movies Delete: button shown)`);
   check(text.includes(L["nav.settings"]) && !(expect === "sv" && text.includes("Remove finished seasons")) && !(expect === "en" && text.includes("Ta bort färdigsedda säsonger")), `${tag}: page text is in the right language`);
+  check(root.querySelectorAll(".cl-root").length === 3 && [...root.querySelectorAll(".cl-root")].find((x) => x.value === "/kids/").checked && root.querySelector('[data-el="testNotify"]') !== null && root.querySelector('[data-el="exportBackup"]') !== null, `${tag}: root folders listed (the left-out one ticked), notification test and backup buttons`);
   if (host === "app") {
     check(root.querySelector('[data-page="logs"]') && text.includes("Sonarr <script>bad()</script> slow") && root.querySelector("script") === null, "app: Logs page shows lines as text");
     check(root.querySelector('a[href="api/logs/clearr.txt"]') !== null && root.querySelector('input[name="debugLogging"]').checked, "app: log download link and Debug logging setting");
