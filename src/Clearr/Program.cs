@@ -321,6 +321,16 @@ api.MapPost("/restart", (IHostApplicationLifetime life) =>
 
 api.MapGet("/history", (ClearrEngine svc) => Results.Ok(svc.History()));
 
+api.MapGet("/backup", (SettingsStore st, KeepStore keep) =>
+    Results.Text(Backup.Create(st, keep, version).ToJsonString(Json.Options), "application/json"));
+
+api.MapPost("/backup/restore", async (HttpContext ctx, SettingsStore st, KeepStore keep) =>
+{
+    var body = await JsonNode.ParseAsync(ctx.Request.Body);
+    var problem = Backup.Restore(body, st, keep, s => s.AllowDirectDelete = st.Get().AllowDirectDelete);
+    return problem == null ? Results.Ok(new { ok = true }) : Results.BadRequest(new { error = problem });
+});
+
 api.MapGet("/logs", (int? lines, FileLoggerProvider logs) => Results.Ok(LogFiles.List(logs, lines ?? 500)));
 
 api.MapGet("/logs/{file}", (string file, FileLoggerProvider logs) =>

@@ -89,6 +89,43 @@ internal static class StorageTests
         Expect(Directory.GetFiles(logDir).Length <= FileLoggerProvider.MaxFiles, "At most 5 log files are kept");
         Expect(FileLoggerProvider.IsLogFileName("clearr.txt") && FileLoggerProvider.IsLogFileName("clearr.4.txt") && !FileLoggerProvider.IsLogFileName("../settings.json") && !FileLoggerProvider.IsLogFileName("clearr.9.txt") && !FileLoggerProvider.IsLogFileName("api.key"), "Only Clearr's log files can be downloaded");
 
+        // Backup and restore.
+        var from = new ConfigPaths(Path.Combine(root, "backup-from"));
+        var fromSettings = new SettingsStore(from);
+        var fromKeep = new KeepStore(from);
+        var src = fromSettings.Get();
+        src.GraceDays = 9;
+        src.ShowsMode = CleanupMode.Delete;
+        src.Sonarr.ApiKey = "sonarr-key";
+        src.PasswordHash = "secret-hash";
+        fromSettings.Save(src);
+        fromKeep.Set("show-1", true);
+        fromKeep.Set("movie-2", true);
+        var file = Backup.Create(fromSettings, fromKeep, "0.3.0");
+        var text = file.ToJsonString();
+        Expect(text.Contains("sonarr-key") && !text.Contains("secret-hash") && text.Contains("show-1"), "Backup has settings and keep list but not the UI password");
+
+        var to = new ConfigPaths(Path.Combine(root, "backup-to"));
+        var toSettings = new SettingsStore(to);
+        var toKeep = new KeepStore(to);
+        var mine = toSettings.Get();
+        mine.PasswordHash = "my-own-hash";
+        toSettings.Save(mine);
+        toKeep.Set("old-item", true);
+        var problem = Backup.Restore(System.Text.Json.Nodes.JsonNode.Parse(text), toSettings, toKeep);
+        var r = toSettings.Get();
+        Expect(problem == null && r.GraceDays == 9 && r.ShowsMode == CleanupMode.Delete && r.Sonarr.ApiKey == "sonarr-key" && r.PasswordHash == "my-own-hash", "Restore applies the settings and keeps this server's password");
+        Expect(toKeep.Contains("show-1") && toKeep.Contains("movie-2") && !toKeep.Contains("old-item"), "Restore replaces the keep list");
+
+        var oldBackup = """{ "clearrBackup": 1, "settings": { "mode": "Delete", "scheduleTime": "02:00" }, "keep": [] }""";
+        problem = Backup.Restore(System.Text.Json.Nodes.JsonNode.Parse(oldBackup), toSettings, toKeep);
+        r = toSettings.Get();
+        Expect(problem == null && r.ShowsMode == CleanupMode.Delete && r.MoviesScheduleTime == "02:00", "A backup from an older version is upgraded on restore");
+
+        var before = toSettings.Get().GraceDays;
+        Expect(Backup.Restore(System.Text.Json.Nodes.JsonNode.Parse("""{ "graceDays": 1 }"""), toSettings, toKeep) != null && toSettings.Get().GraceDays == before, "A file that isn't a backup is refused and changes nothing");
+        Expect(Backup.Restore(System.Text.Json.Nodes.JsonNode.Parse("""{ "clearrBackup": 1, "settings": { "schemaVersion": 2, "showsScheduleTime": "25:99" } }"""), toSettings, toKeep) != null, "A backup with invalid settings is refused");
+
         try
         {
             Directory.Delete(root, true);

@@ -64,9 +64,12 @@ public class JellyfinClient
         var stateTasks = lib.Users
             .SelectMany(u => StateFilters.Select(filter => (User: u, Task: ItemsAsync($"userId={u.Id}&IncludeItemTypes=Episode,Movie&excludeLocationTypes=Virtual&EnableUserData=true&Filters={filter}", gate, ct))))
             .ToList();
+        var favoriteTasks = lib.Users
+            .Select(u => (User: u, Task: ItemsAsync($"userId={u.Id}&IncludeItemTypes=Series,Season,Movie&Filters=IsFavorite", gate, ct)))
+            .ToList();
 
         // Wait for everything (even after a failure), so no request outlives this call.
-        await Task.WhenAll(structure.Concat(stateTasks.Select(x => x.Task)));
+        await Task.WhenAll(structure.Concat(stateTasks.Select(x => x.Task)).Concat(favoriteTasks.Select(x => x.Task)));
         var series = seriesTask.Result;
         var seasons = seasonsTask.Result;
         var episodes = episodesTask.Result;
@@ -124,6 +127,14 @@ public class JellyfinClient
                 Tags = m.Strings("Tags"),
                 ProviderIds = m.Dict("ProviderIds"),
             });
+        }
+
+        foreach (var (u, task) in favoriteTasks)
+        {
+            foreach (var it in await task)
+            {
+                lib.AddFavorite(it.Str("Id")!, u.Id);
+            }
         }
 
         foreach (var (u, task) in stateTasks)

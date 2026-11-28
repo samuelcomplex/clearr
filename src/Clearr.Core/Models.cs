@@ -60,6 +60,19 @@ public class LibrarySnapshot
     /// <summary>itemId → userId → play state. Missing entry = never touched.</summary>
     public Dictionary<string, Dictionary<string, PlayState>> UserData { get; set; } = new();
 
+    /// <summary>itemId (show, season or movie) → ids of the users who marked it as a favourite.</summary>
+    public Dictionary<string, HashSet<string>> Favorites { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public void AddFavorite(string itemId, string userId)
+    {
+        if (!Favorites.TryGetValue(itemId, out var users))
+        {
+            Favorites[itemId] = users = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        users.Add(userId);
+    }
+
     /// <summary>Whether Sonarr / Radarr were reachable and indexed for this snapshot.</summary>
     public bool SonarrConnected { get; set; }
     public bool RadarrConnected { get; set; }

@@ -558,6 +558,8 @@ public static class ClearrUi
 /// <summary>Validation both hosts apply when settings are saved.</summary>
 public static class SettingsRules
 {
+    private static readonly string[] TimeFormats = { "H:mm", "HH:mm" };
+
     public static string? Normalize(ClearrSettings s)
     {
         s.GraceDays = Math.Max(0, s.GraceDays);
@@ -566,6 +568,16 @@ public static class SettingsRules
         s.MaxDeleteGbPerRun = Math.Max(0, s.MaxDeleteGbPerRun);
         s.KeepTag = (s.KeepTag ?? "").Trim();
         s.ExcludedUserIds ??= new();
+        foreach (var time in new[] { s.ShowsScheduleTime, s.MoviesScheduleTime })
+        {
+            if (!TimeOnly.TryParseExact((time ?? "").Trim(), TimeFormats, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+            {
+                return "Schedule times must look like 04:00";
+            }
+        }
+
+        s.ShowsScheduleTime = s.ShowsScheduleTime.Trim();
+        s.MoviesScheduleTime = s.MoviesScheduleTime.Trim();
         return s.Https.Port is < 1 or > 65535 ? "HTTPS port must be between 1 and 65535" : null;
     }
 }

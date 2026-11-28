@@ -158,6 +158,7 @@
             '<label>' + e('settings.grace') + '<input name="graceDays" type="number" min="0"></label>' +
             check('refreshJellyfinAfterCleanup', 'settings.refreshJellyfin') +
             '<label>' + e('settings.keepTag') + '<input name="keepTag"><span class="cl-hint">' + e('settings.keepTagHint') + '</span></label>' +
+            check('keepFavorites', 'settings.keepFavorites') +
 
             '<h2>' + e('settings.droppedOff') + '</h2>' +
             '<label>' + e('settings.inactiveDays') + '<input name="inactiveDays" type="number" min="1"></label>' +
@@ -190,6 +191,12 @@
                 : '') +
 
             '<div class="cl-save-row"><button type="submit" class="cl-btn cl-primary">' + e('settings.save') + '</button><span data-el="saveMsg"></span></div>' +
+            '<h3>' + e('backup.title') + '</h3>' +
+            '<p class="cl-hint">' + e('backup.hint') + '</p>' +
+            '<button type="button" class="cl-btn cl-small" data-el="exportBackup">' + e('backup.export') + '</button> ' +
+            '<button type="button" class="cl-btn cl-small" data-el="importBackup">' + e('backup.import') + '</button>' +
+            '<input type="file" accept=".json,application/json" data-el="backupFile" class="cl-hidden">' +
+            '<span data-el="backupMsg" class="cl-test-result"></span>' +
             '</form></section>';
     }
 
@@ -297,7 +304,7 @@
             var external = kept && keptBy && keptBy !== 'Clearr' && keptBy !== 'Sonarr tag' && keptBy !== 'Radarr tag';
             var by = !keptBy ? '' : has('keptBy.' + keptBy) ? t('keptBy.' + keptBy) : keptBy;
             return '<button type="button" class="cl-keep' + (kept ? ' cl-on' : '') + '" data-id="' + esc(id) + '" data-kind="' + k + '" data-keep="' + (!kept) + '"' +
-                (external ? ' disabled title="' + e('keep.external', { by: by }) + '"' : ' title="' + (kept ? e('keep.keptTitle', { by: by }) : e('keep.keepTitle')) + '"') +
+                (keptBy === 'Favourite' ? ' disabled title="' + e('keep.favourite') + '"' : external ? ' disabled title="' + e('keep.external', { by: by }) + '"' : ' title="' + (kept ? e('keep.keptTitle', { by: by }) : e('keep.keepTitle')) + '"') +
                 '>' + (kept ? e('keep.kept') + ' ✓' : e('keep.keep')) + '</button>';
         }
 
@@ -467,6 +474,38 @@
                     });
                 });
             }
+
+            el('exportBackup').addEventListener('click', function () {
+                api('backup').then(function (data) {
+                    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    var a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'clearr-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+                    document.body.appendChild(a); a.click(); a.remove();
+                    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+                }).catch(function (err) { var m = el('backupMsg'); m.textContent = err.message; m.className = 'cl-test-result cl-error'; });
+            });
+            el('importBackup').addEventListener('click', function () { el('backupFile').click(); });
+            el('backupFile').addEventListener('change', function () {
+                var file = this.files && this.files[0];
+                var m = el('backupMsg');
+                this.value = '';
+                if (!file) return;
+                if (!confirm(t('backup.confirm'))) return;
+                file.text().then(function (text) {
+                    var data;
+                    try { data = JSON.parse(text); } catch (x) { throw new Error(t('backup.notBackup')); }
+                    return api('backup/restore', 'POST', data);
+                }).then(function () {
+                    m.textContent = t('backup.restored'); m.className = 'cl-test-result cl-ok';
+                    state.report = null;
+                    return loadStatus().then(loadSettings);
+                }).catch(function (err) {
+                    var b = err.body && err.body.error;
+                    m.textContent = t('backup.failed') + ' ' + (b === "This isn't a Clearr backup file." ? t('backup.notBackup') : (b || err.message));
+                    m.className = 'cl-test-result cl-error';
+                });
+            });
 
             form.addEventListener('submit', function (ev) {
                 ev.preventDefault();

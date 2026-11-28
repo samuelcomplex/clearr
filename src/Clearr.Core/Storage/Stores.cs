@@ -118,6 +118,18 @@ public static class SettingsMigrations
         },
     };
 
+    /// <summary>Reads settings saved by any version (a file or a backup) as the current format.</summary>
+    public static ClearrSettings ToCurrent(System.Text.Json.Nodes.JsonObject json)
+    {
+        var version = json.TryGetPropertyValue("schemaVersion", out var v) && v is not null ? v.GetValue<int>() : 0;
+        if (version < ClearrSettings.CurrentSchema)
+        {
+            Upgrade(json, version);
+        }
+
+        return json.Deserialize<ClearrSettings>(Json.Options) ?? new();
+    }
+
     public static void Upgrade(System.Text.Json.Nodes.JsonObject json, int from)
     {
         for (var v = from + 1; v <= ClearrSettings.CurrentSchema; v++)
@@ -238,6 +250,23 @@ public class KeepStore : IKeepStore
         }
     }
 
+    public List<string> All()
+    {
+        lock (_lock)
+        {
+            return Load().OrderBy(x => x, StringComparer.Ordinal).ToList();
+        }
+    }
+
+    public void ReplaceAll(IEnumerable<string> ids)
+    {
+        lock (_lock)
+        {
+            _ids = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+            AtomicFile.Write(_path, JsonSerializer.Serialize(_ids.OrderBy(x => x).ToList(), Json.Options));
+        }
+    }
+
     public void Set(string id, bool keep)
     {
         lock (_lock)
@@ -298,4 +327,52 @@ public class HistoryStore : IHistoryStore
         System.IO.File.Exists(_path)
             ? JsonSerializer.Deserialize<List<HistoryEntry>>(System.IO.File.ReadAllText(_path), Json.Options) ?? new()
             : new();
+}
+
+/// <summary>
+/// One file with everything worth moving to another server: settings (including the Sonarr/Radarr/Jellyfin API keys)
+/// and the keep list. The UI password is left out on purpose; set it again after restoring.
+/// </summary>
+public static class Backup
+{
+    public const string Marker = "clearrBackup";
+
+    public static System.Text.Json.Nodes.JsonObject Create(SettingsStore settings, KeepStore keep, string version)
+    {
+        var s = settings.Get();
+        s.PasswordHash = "";
+        return new System.Text.Json.Nodes.JsonObject
+        {
+            [Marker] = 1,
+            ["exportedAt"] = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            ["clearrVersion"] = version,
+            ["settings"] = JsonSerializer.SerializeToNode(s, Json.Options),
+            ["keep"] = JsonSerializer.SerializeToNode(keep.All(), Json.Options),
+        };
+    }
+
+    /// <summary>Restores a backup. Returns null on success, or what's wrong with the file. The current password is kept.</summary>
+    public static string? Restore(System.Text.Json.Nodes.JsonNode? body, SettingsStore settings, KeepStore keep, Action<ClearrSettings>? adjust = null)
+    {
+        if (body is not System.Text.Json.Nodes.JsonObject o || o[Marker] is null || o["settings"] is not System.Text.Json.Nodes.JsonObject s)
+        {
+            return "This isn't a Clearr backup file.";
+        }
+
+        var restored = SettingsMigrations.ToCurrent((System.Text.Json.Nodes.JsonObject)s.DeepClone());
+        restored.PasswordHash = settings.Get().PasswordHash;
+        adjust?.Invoke(restored);
+        if (Clearr.Core.SettingsRules.Normalize(restored) is string problem)
+        {
+            return problem;
+        }
+
+        settings.Save(restored);
+        if (o["keep"] is System.Text.Json.Nodes.JsonArray k)
+        {
+            keep.ReplaceAll(k.Select(x => x?.GetValue<string>()).Where(x => !string.IsNullOrWhiteSpace(x))!);
+        }
+
+        return null;
+    }
 }

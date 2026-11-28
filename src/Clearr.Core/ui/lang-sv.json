@@ -1,12 +1,10 @@
 {
   "text": "{text}",
-
   "nav.shows": "Serier",
   "nav.movies": "Filmer",
   "nav.history": "Historik",
   "nav.settings": "Inställningar",
   "nav.logs": "Loggar",
-
   "shell.signIn": "Logga in",
   "shell.password": "Lösenord",
   "shell.signOut": "Logga ut",
@@ -15,13 +13,10 @@
   "shell.last": "Senast: {summary}",
   "login.wrong": "Fel lösenord",
   "login.locked": "För många felaktiga lösenord. Försök igen om några minuter.",
-
   "common.loading": "Laddar…",
-
   "banner.welcomeApp": "Välkommen till Clearr. Börja med att ansluta Jellyfin (och Sonarr/Radarr) under Inställningar.",
   "banner.welcomePlugin": "Välkommen till Clearr. Börja med att ansluta Sonarr och/eller Radarr under Inställningar.",
   "banner.openSettings": "Öppna Inställningar",
-
   "modeName.Off": "Av",
   "modeName.DryRun": "Testkörning",
   "modeName.Delete": "Radera",
@@ -32,7 +27,6 @@
   "modeOption.Delete": "Radera – ta bort filer",
   "modeNote.delete": "\"{deleteNow}\" tar bort filer direkt efter att du bekräftat listan.",
   "modeNote.safe": "Inget kan tas bort i det här läget. \"{preview}\" visar vad som skulle försvinna. Använd {keep} för att skydda något.",
-
   "filter.all": "Alla",
   "filter.ready": "Klara att rensa",
   "filter.flagged": "Tittare som slutat",
@@ -42,7 +36,6 @@
   "filter.unmanaged": "Inte i Sonarr/Radarr",
   "filter.unmanagedShows": "Inte i Sonarr",
   "filter.unmanagedMovies": "Inte i Radarr",
-
   "library.search": "Sök",
   "library.refresh": "Uppdatera",
   "library.preview": "Förhandsgranska rensning",
@@ -57,11 +50,9 @@
   "library.season": "Säsong",
   "library.viewers": "Tittare",
   "library.cleanup": "Rensning",
-
   "showStatus.Continuing": "Pågående",
   "showStatus.Ended": "Avslutad",
   "showStatus.unknown": "okänd status",
-
   "status.NotStarted": "Inte påbörjad",
   "status.InProgress": "Pågår",
   "status.Finished": "Klar",
@@ -72,7 +63,6 @@
   "chip.last": "senast {episode}",
   "chip.on": "den {date}",
   "chip.nobodyStarted": "ingen har börjat",
-
   "pill.viaJellyfin": "via Jellyfin",
   "pill.viaJellyfinTitle": "Hanteras inte av {arr}; skulle tas bort via Jellyfin",
   "pill.notInArr": "inte i {arr}",
@@ -81,18 +71,18 @@
   "pill.seasonReady": "{count} säsong klar",
   "pill.seasonsReady": "{count} säsonger klara",
   "pill.ready": "klar",
-
   "keep.keep": "Behåll",
   "keep.kept": "Behålls",
   "keep.keepTitle": "Ta aldrig bort den här",
   "keep.keptTitle": "Behålls ({by}). Klicka för att ta bort.",
   "keep.external": "Behålls av en {by}; ta bort den där",
   "keep.showKept": "serien behålls",
+  "keep.favourite": "Någon har markerat den som favorit i Jellyfin",
   "keptBy.Clearr": "Clearr",
   "keptBy.Sonarr tag": "Sonarr-tagg",
   "keptBy.Radarr tag": "Radarr-tagg",
   "keptBy.Jellyfin tag": "Jellyfin-tagg",
-
+  "keptBy.Favourite": "favorit",
   "line.wholeShow": "(hela serien)",
   "action.Deleted": "Raderad",
   "action.WouldDelete": "Skulle tas bort",
@@ -106,18 +96,15 @@
   "confirm.title": "Ta bort {count} objekt, {size}, PERMANENT?",
   "confirm.more": "… och {count} till",
   "confirm.cannotUndo": "Det går inte att ångra.",
-
   "history.empty": "Inget har körts än.",
   "history.when": "När",
   "history.action": "Händelse",
   "history.what": "Vad",
   "history.size": "Storlek",
   "history.detail": "Detaljer",
-
   "logs.hint": "Nyast först. Slå på Felsökningsloggning under Inställningar för att se varje beslut; bifoga filerna när du rapporterar ett problem.",
   "logs.download": "Ladda ner:",
   "logs.empty": "Inga loggrader än.",
-
   "settings.connections": "Anslutningar",
   "settings.url": "URL",
   "settings.apiKey": "API-nyckel",
@@ -149,6 +136,7 @@
   "settings.refreshJellyfin": "Uppdatera Jellyfin-biblioteket efter en rensning",
   "settings.keepTag": "Behåll-tagg",
   "settings.keepTagHint": "Sådant med den här taggen i Jellyfin, Sonarr eller Radarr tas aldrig bort. Behåll-knapparna lägger även till den i Sonarr/Radarr.",
+  "settings.keepFavorites": "Behåll allt som någon har markerat som favorit i Jellyfin",
   "settings.droppedOff": "Tittare som slutat",
   "settings.inactiveDays": "Flagga en tittare efter så här många dagar utan framsteg",
   "settings.sampledMax": "\"Provtittat\" betyder att man sett högst så här många avsnitt",
@@ -173,7 +161,6 @@
   "settings.apiKeyHint": "(för skript / Home Assistant: X-Api-Key-header)",
   "settings.save": "Spara",
   "settings.saved": "Sparat",
-
   "https.hint": "Behövs inte om en omvänd proxy (som Nginx Proxy Manager) redan sköter HTTPS för Clearr. Vanlig HTTP finns alltid kvar på port 8585.",
   "https.enable": "Slå på HTTPS",
   "https.port": "HTTPS-port",
@@ -193,7 +180,6 @@
   "https.didntComeBack": "Clearr startade inte igen. Är containern inställd på restart: unless-stopped?",
   "https.on": "HTTPS är på, port {port} ({certificate}).",
   "https.off": "HTTPS är av.",
-
   "reason.notStarted": "Ingen har börjat titta",
   "reason.waiting": "Väntar på {people}",
   "reason.person": "{name} ({watched}/{total}{flags})",
@@ -206,7 +192,6 @@
   "flagInline.Sampled": "provtittat",
   "flagInline.Stalled": "fastnat",
   "flagInline.MidEpisode": "mitt i avsnitt",
-
   "block.newestSeason": "Senaste säsongen av en serie som fortfarande pågår",
   "block.notInSonarr": "Inte i Sonarr — Clearr tar bara bort serier som Sonarr hanterar",
   "block.sonarrOff": "Sonarr är inte anslutet",
@@ -215,7 +200,6 @@
   "block.showStatus": "Seriens status är {status}",
   "block.showStatusUnknown": "Seriens status är okänd (inte markerad som avslutad)",
   "block.seasonKept": "En säsong är markerad att behållas (andra säsonger kan fortfarande tas bort)",
-
   "outcome.noFileRadarr": "Ingen fil i Radarr",
   "outcome.noFilesSonarr": "Inga filer i Sonarr",
   "outcome.unseen": "Sonarr har {files} filer i säsong {season} men Jellyfin listar bara {known} avsnitt; väntar på att Jellyfin hinner ikapp",
@@ -226,19 +210,24 @@
   "outcome.movieDeleted": "slutade bevakas och filen raderades i Radarr",
   "outcome.showDeleted": "{files} filer raderade i Sonarr; befintliga säsonger bevakas inte längre, serien bevakas fortfarande för nya säsonger",
   "outcome.seasonDeleted": "{files} filer raderade i Sonarr; säsongen bevakas inte längre",
-
   "error.refusedShows": "Inget raderades: rensningsläget för serier är {mode}. Ställ in det på Radera under Inställningar först.",
   "error.refusedMovies": "Inget raderades: rensningsläget för filmer är {mode}. Ställ in det på Radera under Inställningar först.",
   "error.refusedBoth": "Inget raderades: rensningsläget är {shows} för serier och {movies} för filmer. Ställ in ett av dem på Radera under Inställningar först.",
-
   "notice.upgraded": "Inställningarna uppgraderades från format {from} till {to}; den gamla filen sparas som {file}.",
   "notice.broken": "settings.json gick inte att läsa ({error}); den flyttades till {file} och Clearr startade med standardinställningar (Testkörning).",
   "notice.newer": "De här inställningarna sparades av en nyare Clearr (format {version}); en kopia sparas som {file}.",
-
   "run.showsDry": "Testkörning serier: {items} objekt, {gb} GB",
   "run.showsCleanup": "Rensning serier: {items} objekt, {gb} GB",
   "run.showsFailed": "Körningen för serier misslyckades: {error}",
   "run.moviesDry": "Testkörning filmer: {items} objekt, {gb} GB",
   "run.moviesCleanup": "Rensning filmer: {items} objekt, {gb} GB",
-  "run.moviesFailed": "Körningen för filmer misslyckades: {error}"
+  "run.moviesFailed": "Körningen för filmer misslyckades: {error}",
+  "backup.title": "Säkerhetskopia",
+  "backup.hint": "Ladda ner inställningar och behåll-listan som en fil, eller återställ dem från en. Filen innehåller dina API-nycklar, så förvara den säkert. Lösenordet till gränssnittet ingår inte.",
+  "backup.export": "Ladda ner säkerhetskopia",
+  "backup.import": "Återställ från fil…",
+  "backup.confirm": "Ersätta alla inställningar och behåll-listan med dem i filen?",
+  "backup.restored": "Återställt.",
+  "backup.failed": "Kunde inte återställa:",
+  "backup.notBackup": "Det här är ingen säkerhetskopia från Clearr."
 }

@@ -35,5 +35,9 @@ The first public release.
 - Log files in `/config/logs` with rotation, a Logs page and a Debug logging option.
 - Settings carry a format version and are upgraded automatically, with a backup; a damaged settings file no longer stops Clearr from starting.
 - Much faster on large libraries: Jellyfin and Sonarr requests run side by side.
+- Backup and restore of settings and the Keep list as one file.
+
+### Keeping
+- Favourites in Jellyfin are kept automatically (Keep favourites, on by default).
 
 [Unreleased]: https://github.com/samuelcomplex/clearr/commits/main

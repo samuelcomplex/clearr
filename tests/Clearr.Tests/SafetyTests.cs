@@ -149,6 +149,38 @@ internal static class SafetyTests
         Expect(b3.World.EpisodeFiles.Any(f => f.SeriesId == k4.SonarrId && f.Season == 2) && !b3.World.EpisodeFiles.Any(f => f.SeriesId == k4.SonarrId && f.Season == 1), "Kept season stays; the show's other season is removed");
         Expect(b3.World.RadarrMovies[km.RadarrId!.Value]["movieFile"] != null, "Keep in Clearr protects a movie");
 
+        // Favourites: kept while the option is on, but only favourites of tracked (not ignored) users count.
+        var bf = new WorldBuilder(seed: 6);
+        bf.User("u1", "Anna");
+        bf.User("u2", "Guest");
+        var fav1 = bf.Show("Anna's Favourite", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1);
+        var fav2 = bf.Show("Favourite Season", "Ended", new[] { 1, 1 }, inSonarr: true, gbPerFile: 1);
+        var fav3 = bf.Show("Ignored Guest's Favourite", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1);
+        var favM = bf.Movie("Favourite Movie", inRadarr: true, gb: 1);
+        foreach (var s in new[] { fav1, fav2, fav3 })
+        {
+            bf.WatchAll("u1", s, 30);
+        }
+
+        bf.WatchMovie("u1", favM, true, 30);
+        bf.World.Favorites.Add(("u1", fav1.Id));
+        bf.World.Favorites.Add(("u1", fav2.Seasons[0].Id));
+        bf.World.Favorites.Add(("u2", fav3.Id));
+        bf.World.Favorites.Add(("u1", favM.Id));
+        var envf = await Env.StartAsync(bf.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.Delete, ExcludedUserIds = new() { "u2" } });
+        var (_, favReport, _, _) = await envf.Engine.BuildAsync(default);
+        Expect(favReport.Shows.Single(x => x.Name == "Anna's Favourite").KeptBy == "Favourite" && favReport.Movies.Single().KeptBy == "Favourite", "Favourite show and movie are kept (shown as kept by a favourite)");
+        await envf.Engine.CleanupAsync(false, true, default);
+        Expect(bf.World.EpisodeFiles.Count(f => f.SeriesId == fav1.SonarrId) == 1 && bf.World.RadarrMovies[favM.RadarrId!.Value]["movieFile"] != null, "Favourites survive a real cleanup");
+        Expect(bf.World.EpisodeFiles.Any(f => f.SeriesId == fav2.SonarrId && f.Season == 1) && !bf.World.EpisodeFiles.Any(f => f.SeriesId == fav2.SonarrId && f.Season == 2), "A favourite season stays; the show's other season goes");
+        Expect(!bf.World.EpisodeFiles.Any(f => f.SeriesId == fav3.SonarrId), "An ignored user's favourite doesn't hold anything back");
+        var favOff = envf.Settings.Get();
+        favOff.KeepFavorites = false;
+        envf.Settings.Save(favOff);
+        await envf.Engine.CleanupAsync(false, true, default);
+        Expect(!bf.World.EpisodeFiles.Any(f => f.SeriesId == fav1.SonarrId), "With the option off, favourites are cleaned up like anything else");
+        await envf.StopAsync();
+
         // Grace period, someone still watching, someone who never started.
         var b4 = new WorldBuilder(seed: 4);
         b4.User("u1", "Anna");
@@ -203,6 +235,14 @@ internal static class SafetyTests
                     }
                 }
 
+                foreach (var id in shows.Select(s => s.Id).Concat(shows.SelectMany(s => s.Seasons.Select(x => x.Id))).Concat(movies.Select(m => m.Id)))
+                {
+                    if (rnd.Next(25) == 0)
+                    {
+                        b.World.Favorites.Add((u, id));
+                    }
+                }
+
                 foreach (var m in movies)
                 {
                     if (rnd.Next(3) > 0)
@@ -228,6 +268,7 @@ internal static class SafetyTests
                 AbandonedUsersBlockCleanup = rnd.Next(2) == 0,
                 MaxDeleteGbPerRun = new[] { 0, 2, 5, 12, 50 }[rnd.Next(5)],
                 ExcludedUserIds = users.Where(_ => rnd.Next(5) == 0).ToList(),
+                KeepFavorites = rnd.Next(3) > 0,
             };
             var dryRun = rnd.Next(5) == 0;
             var scope = rnd.Next(5) switch { 0 => CleanupScope.Shows, 1 => CleanupScope.Movies, _ => CleanupScope.All };
@@ -348,12 +389,15 @@ internal static class SafetyTests
 
         private bool TagKept(IEnumerable<string> tags) => tags.Any(t => string.Equals(t, _s.KeepTag, StringComparison.OrdinalIgnoreCase));
 
-        private bool ShowKept(WorldBuilder.ShowRef show) => _kept.Contains(show.Id) || TagKept(show.JellyfinTags) || TagKept(show.SonarrTags);
+        private bool Favourite(string id) => _s.KeepFavorites && _b.World.Favorites.Any(f => f.Item == id && !_s.ExcludedUserIds.Contains(f.User));
+
+        private bool ShowKept(WorldBuilder.ShowRef show) => _kept.Contains(show.Id) || TagKept(show.JellyfinTags) || TagKept(show.SonarrTags) || Favourite(show.Id);
 
         public bool SeasonAllowed(WorldBuilder.ShowRef show, int season)
         {
             var maxSeason = show.Seasons.Max(x => x.Number);
-            if (ShowKept(show) || _kept.Contains(show.Seasons.Single(x => x.Number == season).Id))
+            var seasonId = show.Seasons.Single(x => x.Number == season).Id;
+            if (ShowKept(show) || _kept.Contains(seasonId) || Favourite(seasonId))
             {
                 return false;
             }
@@ -368,7 +412,7 @@ internal static class SafetyTests
 
         public bool ShowAllowed(WorldBuilder.ShowRef show)
         {
-            if (ShowKept(show) || show.Seasons.Any(x => _kept.Contains(x.Id)))
+            if (ShowKept(show) || show.Seasons.Any(x => _kept.Contains(x.Id) || Favourite(x.Id)))
             {
                 return false;
             }
@@ -382,7 +426,7 @@ internal static class SafetyTests
         }
 
         public bool MovieAllowed(WorldBuilder.MovieRef m) =>
-            !_kept.Contains(m.Id) && !TagKept(m.JellyfinTags) && Done(new List<string> { m.Id });
+            !_kept.Contains(m.Id) && !TagKept(m.JellyfinTags) && !Favourite(m.Id) && Done(new List<string> { m.Id });
 
         private bool NoUnseenFiles(WorldBuilder.ShowRef show, int season) =>
             _b.World.EpisodeFiles.Count(f => f.SeriesId == show.SonarrId && f.Season == season) <= show.Episodes.Count(e => e.Season == season);

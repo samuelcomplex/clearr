@@ -79,6 +79,9 @@ public class ClearrSettings
     public int GraceDays { get; set; } = 7;
     public int MaxDeleteGbPerRun { get; set; } = 50;
     public string KeepTag { get; set; } = "keep";
+
+    /// <summary>Anything a tracked user marked as a favourite in Jellyfin (show, season or movie) is never removed.</summary>
+    public bool KeepFavorites { get; set; } = true;
     /// <summary>App only: local time of day for the daily shows run, "HH:mm".</summary>
     public string ShowsScheduleTime { get; set; } = "04:00";
 

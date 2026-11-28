@@ -1,12 +1,10 @@
 {
   "text": "{text}",
-
   "nav.shows": "Shows",
   "nav.movies": "Movies",
   "nav.history": "History",
   "nav.settings": "Settings",
   "nav.logs": "Logs",
-
   "shell.signIn": "Sign in",
   "shell.password": "Password",
   "shell.signOut": "Sign out",
@@ -15,13 +13,10 @@
   "shell.last": "Last: {summary}",
   "login.wrong": "Wrong password",
   "login.locked": "Too many wrong passwords. Try again in a few minutes.",
-
   "common.loading": "Loading…",
-
   "banner.welcomeApp": "Welcome to Clearr. Start by connecting Jellyfin (and Sonarr/Radarr) in Settings.",
   "banner.welcomePlugin": "Welcome to Clearr. Start by connecting Sonarr and/or Radarr in Settings.",
   "banner.openSettings": "Open Settings",
-
   "modeName.Off": "Off",
   "modeName.DryRun": "Dry run",
   "modeName.Delete": "Delete",
@@ -32,7 +27,6 @@
   "modeOption.Delete": "Delete – remove files",
   "modeNote.delete": "\"{deleteNow}\" removes files right after you confirm the list.",
   "modeNote.safe": "Nothing can be removed in this mode. \"{preview}\" shows what would go. Use {keep} to protect something.",
-
   "filter.all": "All",
   "filter.ready": "Ready to clear",
   "filter.flagged": "Dropped-off viewers",
@@ -42,7 +36,6 @@
   "filter.unmanaged": "Not in Sonarr/Radarr",
   "filter.unmanagedShows": "Not in Sonarr",
   "filter.unmanagedMovies": "Not in Radarr",
-
   "library.search": "Search",
   "library.refresh": "Refresh",
   "library.preview": "Preview cleanup",
@@ -57,11 +50,9 @@
   "library.season": "Season",
   "library.viewers": "Viewers",
   "library.cleanup": "Cleanup",
-
   "showStatus.Continuing": "Continuing",
   "showStatus.Ended": "Ended",
   "showStatus.unknown": "unknown status",
-
   "status.NotStarted": "Not started",
   "status.InProgress": "In progress",
   "status.Finished": "Finished",
@@ -72,7 +63,6 @@
   "chip.last": "last {episode}",
   "chip.on": "on {date}",
   "chip.nobodyStarted": "nobody started",
-
   "pill.viaJellyfin": "via Jellyfin",
   "pill.viaJellyfinTitle": "Not managed by {arr}; would be removed through Jellyfin",
   "pill.notInArr": "not in {arr}",
@@ -81,18 +71,18 @@
   "pill.seasonReady": "{count} season ready",
   "pill.seasonsReady": "{count} seasons ready",
   "pill.ready": "ready",
-
   "keep.keep": "Keep",
   "keep.kept": "Kept",
   "keep.keepTitle": "Never remove this",
   "keep.keptTitle": "Kept ({by}). Click to remove.",
   "keep.external": "Kept by a {by}; remove it there",
   "keep.showKept": "show kept",
+  "keep.favourite": "Someone marked this as a favourite in Jellyfin",
   "keptBy.Clearr": "Clearr",
   "keptBy.Sonarr tag": "Sonarr tag",
   "keptBy.Radarr tag": "Radarr tag",
   "keptBy.Jellyfin tag": "Jellyfin tag",
-
+  "keptBy.Favourite": "favourite",
   "line.wholeShow": "(whole show)",
   "action.Deleted": "Deleted",
   "action.WouldDelete": "Would remove",
@@ -106,18 +96,15 @@
   "confirm.title": "PERMANENTLY remove {count} item(s), {size}?",
   "confirm.more": "… and {count} more",
   "confirm.cannotUndo": "This cannot be undone.",
-
   "history.empty": "Nothing has run yet.",
   "history.when": "When",
   "history.action": "Action",
   "history.what": "What",
   "history.size": "Size",
   "history.detail": "Detail",
-
   "logs.hint": "Newest first. Turn on Debug logging in Settings to see every decision; attach the files when reporting a problem.",
   "logs.download": "Download:",
   "logs.empty": "No log entries yet.",
-
   "settings.connections": "Connections",
   "settings.url": "URL",
   "settings.apiKey": "API key",
@@ -149,6 +136,7 @@
   "settings.refreshJellyfin": "Refresh the Jellyfin library after a cleanup",
   "settings.keepTag": "Keep tag",
   "settings.keepTagHint": "Items with this tag in Jellyfin, Sonarr or Radarr are never removed. Keep buttons add it in Sonarr/Radarr too.",
+  "settings.keepFavorites": "Keep everything someone marked as a favourite in Jellyfin",
   "settings.droppedOff": "Dropped-off viewers",
   "settings.inactiveDays": "Flag a viewer after this many days without progress",
   "settings.sampledMax": "\"Sampled\" means watched at most this many episodes",
@@ -173,7 +161,6 @@
   "settings.apiKeyHint": "(for scripts / Home Assistant: X-Api-Key header)",
   "settings.save": "Save",
   "settings.saved": "Saved",
-
   "https.hint": "Not needed if a reverse proxy (like Nginx Proxy Manager) already handles HTTPS for Clearr. Plain HTTP always stays on port 8585.",
   "https.enable": "Enable HTTPS",
   "https.port": "HTTPS port",
@@ -193,7 +180,6 @@
   "https.didntComeBack": "Clearr didn't come back. Is the container set to restart: unless-stopped?",
   "https.on": "HTTPS is on, port {port} ({certificate}).",
   "https.off": "HTTPS is off.",
-
   "reason.notStarted": "Nobody has started it",
   "reason.waiting": "Waiting on {people}",
   "reason.person": "{name} ({watched}/{total}{flags})",
@@ -206,7 +192,6 @@
   "flagInline.Sampled": "sampled",
   "flagInline.Stalled": "stalled",
   "flagInline.MidEpisode": "mid-episode",
-
   "block.newestSeason": "Newest season of a show that's still continuing",
   "block.notInSonarr": "Not in Sonarr — Clearr only removes shows Sonarr manages",
   "block.sonarrOff": "Sonarr isn't connected",
@@ -215,7 +200,6 @@
   "block.showStatus": "Show status is {status}",
   "block.showStatusUnknown": "Show status is unknown (not marked Ended)",
   "block.seasonKept": "A season is marked keep (other seasons can still be removed)",
-
   "outcome.noFileRadarr": "No file in Radarr",
   "outcome.noFilesSonarr": "No files in Sonarr",
   "outcome.unseen": "Sonarr has {files} files in season {season} but Jellyfin only lists {known} episodes; waiting for Jellyfin to catch up",
@@ -226,19 +210,24 @@
   "outcome.movieDeleted": "unmonitored and file deleted in Radarr",
   "outcome.showDeleted": "{files} files deleted in Sonarr; existing seasons unmonitored, show still monitored for new seasons",
   "outcome.seasonDeleted": "{files} files deleted in Sonarr; season unmonitored",
-
   "error.refusedShows": "Nothing was deleted: the cleanup mode for shows is {mode}. Set it to Delete in Settings first.",
   "error.refusedMovies": "Nothing was deleted: the cleanup mode for movies is {mode}. Set it to Delete in Settings first.",
   "error.refusedBoth": "Nothing was deleted: the cleanup mode is {shows} for shows and {movies} for movies. Set one to Delete in Settings first.",
-
   "notice.upgraded": "Settings upgraded from format {from} to {to}; the old file is kept as {file}.",
   "notice.broken": "settings.json couldn't be read ({error}); it was moved to {file} and Clearr started with default settings (Dry run).",
   "notice.newer": "These settings were saved by a newer Clearr (format {version}); a copy is kept as {file}.",
-
   "run.showsDry": "Shows dry run: {items} item(s), {gb} GB",
   "run.showsCleanup": "Shows cleanup: {items} item(s), {gb} GB",
   "run.showsFailed": "Shows run failed: {error}",
   "run.moviesDry": "Movies dry run: {items} item(s), {gb} GB",
   "run.moviesCleanup": "Movies cleanup: {items} item(s), {gb} GB",
-  "run.moviesFailed": "Movies run failed: {error}"
+  "run.moviesFailed": "Movies run failed: {error}",
+  "backup.title": "Backup",
+  "backup.hint": "Download your settings and keep list as one file, or restore them from one. The file contains your API keys, so keep it somewhere safe. The UI password isn't included.",
+  "backup.export": "Download backup",
+  "backup.import": "Restore from file…",
+  "backup.confirm": "Replace all settings and the keep list with the ones in this file?",
+  "backup.restored": "Restored.",
+  "backup.failed": "Couldn't restore:",
+  "backup.notBackup": "This isn't a Clearr backup file."
 }

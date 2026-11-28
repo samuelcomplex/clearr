@@ -18,6 +18,7 @@ public class FakeWorld
     public List<Ep> Episodes = new();
     public List<Movie> Movies = new();
     public Dictionary<(string User, string Item), (bool Played, long Ticks, DateTime Last)> UserData = new();
+    public HashSet<(string User, string Item)> Favorites = new();
 
     // Sonarr state
     public Dictionary<int, JsonObject> SonarrSeries = new();
@@ -95,12 +96,12 @@ public static class FakeServers
 
             if (types.Contains("Series"))
             {
-                items.AddRange(w.Shows.Select(s => (object)new { Id = s.Id, Name = s.Name, Status = s.Status, Tags = s.Tags, ProviderIds = new Dictionary<string, string> { ["Tvdb"] = s.Tvdb.ToString() } }));
+                items.AddRange(w.Shows.Where(s => Keep(s.Id)).Select(s => (object)new { Id = s.Id, Name = s.Name, Status = s.Status, Tags = s.Tags, ProviderIds = new Dictionary<string, string> { ["Tvdb"] = s.Tvdb.ToString() } }));
             }
 
             if (types.Contains("Season"))
             {
-                items.AddRange(w.Shows.SelectMany(s => s.Seasons.Select(se => (object)new { Id = se.Id, Name = $"Season {se.Number}", IndexNumber = se.Number, SeriesId = s.Id, Tags = Array.Empty<string>() })));
+                items.AddRange(w.Shows.SelectMany(s => s.Seasons.Where(se => Keep(se.Id)).Select(se => (object)new { Id = se.Id, Name = $"Season {se.Number}", IndexNumber = se.Number, SeriesId = s.Id, Tags = Array.Empty<string>() })));
             }
 
             object EpDto(FakeWorld.Ep e) => new
@@ -126,6 +127,7 @@ public static class FakeServers
             {
                 "IsPlayed" => w.UserData.TryGetValue((user, id), out var d) && d.Played,
                 "IsResumable" => w.UserData.TryGetValue((user, id), out var d) && !d.Played && d.Ticks > 0,
+                "IsFavorite" => w.Favorites.Contains((user, id)),
                 _ => true,
             };
 

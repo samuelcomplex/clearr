@@ -48,6 +48,7 @@ Nothing is ever removed unless that kind's mode is **Delete**, and the mode is c
 | **Grace period** | 7 days | Time between the last viewer finishing and the removal. |
 | **Refresh the Jellyfin library after a cleanup** | On | So removed items disappear from Jellyfin straight away. |
 | **Keep tag** | `keep` | Items with this tag in Jellyfin, Sonarr or Radarr are never removed. Case doesn't matter. |
+| **Keep favourites** | On | A show, season or movie that a tracked user has marked as a favourite in Jellyfin is kept, like a Keep. Favourites of users excluded under **Users** don't count. Unmark it in Jellyfin to let it go. |
 
 ## Flags
 
@@ -67,6 +68,10 @@ Tick **Ignore** for accounts that shouldn't count, such as a shared living-room 
 |---|---|---|
 | **Language** | Automatic | App only. The language of Clearr's pages: **English** or **Svenska**. *Automatic* follows your browser, falling back to English. The plugin has no setting: it follows each Jellyfin user's own display language (*Settings → Display → Display language*), and uses English for languages Clearr doesn't have yet. Messages passed on from Sonarr, Radarr or Jellyfin (such as a connection error) stay in their own language. |
 | **Debug logging** | Off | App only. Writes every decision to the log files. Turn it on while tracking down a problem. |
+
+## Backup
+
+**Download backup** saves your settings and the Keep list as one JSON file; **Restore from file…** loads one, in the app or the plugin, from this or an older version of Clearr. The file contains your Sonarr, Radarr and Jellyfin API keys, so keep it somewhere safe. The UI password isn't in it, and restoring keeps the password, the *Also remove items Sonarr/Radarr don't manage* choice and (in the plugin) the Jellyfin connection of the server you restore on.
 
 ## Security (app)
 
