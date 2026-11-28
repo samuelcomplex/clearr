@@ -67,7 +67,9 @@ var episodes = await Poll("Jellyfin to scan 3 episodes and 1 movie", async () =>
 {
     var e = await jf.GetFromJsonAsync<JsonObject>("Items?Recursive=true&IncludeItemTypes=Episode&Fields=ProviderIds");
     var m = await jf.GetFromJsonAsync<JsonObject>("Items?Recursive=true&IncludeItemTypes=Movie");
-    return e!["Items"]!.AsArray().Count >= 3 && m!["Items"]!.AsArray().Count >= 1 ? e["Items"]!.AsArray() : null;
+    // Wait for season numbers too: Jellyfin lists episodes before it has finished reading them.
+    var items = e!["Items"]!.AsArray();
+    return items.Count >= 3 && items.All(x => x?["ParentIndexNumber"] != null) && m!["Items"]!.AsArray().Count >= 1 ? items : null;
 });
 var movieItem = (await jf.GetFromJsonAsync<JsonObject>("Items?Recursive=true&IncludeItemTypes=Movie"))!["Items"]![0]!;
 var s1 = episodes.Where(e => e!["ParentIndexNumber"]?.GetValue<int>() == 1).Select(e => e!["Id"]!.GetValue<string>()).ToList();
