@@ -28,7 +28,8 @@ const answers = {
   "logs?lines=1000": { files: [{ name: "clearr.txt", size: 2048 }], lines: ["2026-11-26 10:00:00.000|Warn|Engine|Sonarr <script>bad()</script> slow", "   at Something.Trace()"] },
 };
 
-for (const [host, lang] of [["app", "en-US"], ["plugin", "en-GB"], ["app", "sv-SE"]]) {
+// [host, browser language, Jellyfin's language (plugin only), language expected]
+for (const [host, lang, jf, expect] of [["app", "en-US", null, "en"], ["plugin", "sv-SE", "en-GB", "en"], ["app", "sv-SE", null, "sv"], ["plugin", "en-US", "sv", "sv"], ["plugin", "sv-SE", "de", "en"]]) {
   const dom = new JSDOM("<!DOCTYPE html><div id=root></div>", { runScripts: "outside-only", url: "http://clearr.test/" });
   const w = dom.window;
   Object.defineProperty(w.navigator, "languages", { value: [lang] });
@@ -38,15 +39,15 @@ for (const [host, lang] of [["app", "en-US"], ["plugin", "en-GB"], ["app", "sv-S
     const file = new URL(name, uiDir);
     return Promise.resolve(existsSync(file) ? { ok: true, json: () => Promise.resolve(JSON.parse(readFileSync(file, "utf8"))) } : { ok: false, json: () => Promise.resolve({}) });
   };
-  const L = lang.startsWith("sv") ? sv : en;
-  const tag = `${host} (${lang})`;
+  const L = expect === "sv" ? sv : en;
+  const tag = `${host} (browser ${lang}${jf ? ", Jellyfin " + jf : ""})`;
   const errors = [];
   w.addEventListener("error", (e) => errors.push(e.message));
   w.eval(ui);
   const calls = [];
   const api = (path) => { calls.push(path); return path in answers ? Promise.resolve(JSON.parse(JSON.stringify(answers[path]))) : Promise.reject(new Error("unexpected " + path)); };
   const root = w.document.getElementById("root");
-  const mounted = w.ClearrUI.mount(root, { host, api });
+  const mounted = w.ClearrUI.mount(root, { host, api, language: jf || undefined });
   await mounted.ready;
   const pages = host === "app" ? ["shows", "movies", "history", "settings", "logs"] : ["shows", "movies", "history", "settings"];
   const seen = {};
@@ -63,12 +64,13 @@ for (const [host, lang] of [["app", "en-US"], ["plugin", "en-GB"], ["app", "sv-S
   check(text.includes(L["action.WouldDeleteHistory"]) && text.includes("3.0 GB") && text.includes("From before translations"), `${tag}: history lists entries in the language, older untranslated ones as they were`);
   check(seen.shows.text.includes(L["reason.ready"].replace("{names}", "Anna")) && seen.movies.text.includes(L["reason.waiting"].replace("{people}", "Anna (0/1, " + L["flagInline.Sampled"] + ")")), `${tag}: reasons rendered from codes`);
   check(seen.shows.deleteHidden && !seen.movies.deleteHidden && seen.shows.text.includes(L["modeFor.shows"].replace("{mode}", L["modeName.DryRun"])) && seen.movies.text.includes(L["modeFor.movies"].replace("{mode}", L["modeName.Delete"])), `${tag}: each page follows its own mode (shows Dry run: no delete button; movies Delete: button shown)`);
-  check(text.includes(L["nav.settings"]) && !(lang.startsWith("sv") && text.includes("Remove finished seasons")), `${tag}: page text is in the right language`);
+  check(text.includes(L["nav.settings"]) && !(expect === "sv" && text.includes("Remove finished seasons")) && !(expect === "en" && text.includes("Ta bort färdigsedda säsonger")), `${tag}: page text is in the right language`);
   if (host === "app") {
     check(root.querySelector('[data-page="logs"]') && text.includes("Sonarr <script>bad()</script> slow") && root.querySelector("script") === null, "app: Logs page shows lines as text");
     check(root.querySelector('a[href="api/logs/clearr.txt"]') !== null && root.querySelector('input[name="debugLogging"]').checked, "app: log download link and Debug logging setting");
   } else {
     check(root.querySelector('[data-page="logs"]') === null && root.querySelector('input[name="debugLogging"]') === null && !calls.includes("logs?lines=1000"), "plugin: no Logs page or Debug option (Jellyfin has its own logs)");
+    check(root.querySelector('select[name="language"]') === null, "plugin: no Language setting (it follows Jellyfin)");
     check(root.querySelector('input[name="allowDirectDelete"]') !== null && root.querySelector('input[name="jellyfin.url"]') === null, "plugin: Jellyfin fallback shown, Jellyfin connection hidden");
   }
 }

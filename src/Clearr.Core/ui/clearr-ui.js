@@ -6,7 +6,9 @@
  *       api: function (path, method, body) { return Promise<json> },   // rejects with Error (.status, .body)
  *       onStatus: function (status) {},                                 // optional
  *       onReady: function () {},                                        // optional: language loaded, UI drawn
- *       onNavigate: function (page) {}                                  // optional
+ *       onNavigate: function (page) {},                                 // optional
+ *       language: 'sv-SE'                                               // optional: follow the host's language (the plugin
+ *                                                                       // passes Jellyfin's); otherwise the Language setting
  *   });
  *   ui.show('shows' | 'movies' | 'history' | 'settings' | 'logs');   // logs: app only
  *
@@ -28,16 +30,22 @@
         return fetch(base + 'lang-' + code + '.json', { cache: 'no-cache' }).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; });
     }
 
-    /** Picks the language: the setting, else the browser's first supported language, else English. */
-    function pick(setting) {
-        if (setting && LANGUAGES[setting]) return setting;
-        var wanted = (navigator.languages || [navigator.language || 'en']).map(function (l) { return String(l).toLowerCase().split('-')[0]; });
+    function baseCode(code) { return String(code || '').toLowerCase().split(/[-_]/)[0]; }
+
+    /**
+     * Picks the language. A host language (Jellyfin's) is followed exactly, falling back to English;
+     * otherwise the setting, else the browser's first supported language, else English.
+     */
+    function pick(setting, hostLanguage) {
+        if (hostLanguage) return LANGUAGES[baseCode(hostLanguage)] ? baseCode(hostLanguage) : 'en';
+        if (setting && LANGUAGES[baseCode(setting)]) return baseCode(setting);
+        var wanted = (navigator.languages || [navigator.language || 'en']).map(baseCode);
         for (var i = 0; i < wanted.length; i++) if (LANGUAGES[wanted[i]]) return wanted[i];
         return 'en';
     }
 
-    function loadLanguage(setting) {
-        var code = pick(setting);
+    function loadLanguage(setting, hostLanguage) {
+        var code = pick(setting, hostLanguage);
         var en = Object.keys(fallback).length ? Promise.resolve(fallback) : fetchLang('en');
         return en.then(function (e) {
             fallback = e;
@@ -158,10 +166,11 @@
 
             '<h2>' + e('settings.users') + '</h2><p class="cl-hint">' + e('settings.usersHint') + '</p><div data-el="users" class="cl-users"></div>' +
 
-            '<h2>' + e('settings.general') + '</h2>' +
-            '<label>' + e('settings.language') + '<select name="language"><option value="">' + e('settings.languageAuto') + '</option>' +
-            Object.keys(LANGUAGES).map(function (c) { return '<option value="' + c + '">' + esc(LANGUAGES[c]) + '</option>'; }).join('') + '</select></label>' +
-            (app ? check('debugLogging', 'settings.debugLogging') + '<span class="cl-hint">' + e('settings.debugLoggingHint') + '</span>' : '') +
+            // The plugin follows the Jellyfin user's display language, so only the app has a Language setting.
+            (app ? '<h2>' + e('settings.general') + '</h2>' +
+                '<label>' + e('settings.language') + '<select name="language"><option value="">' + e('settings.languageAuto') + '</option>' +
+                Object.keys(LANGUAGES).map(function (c) { return '<option value="' + c + '">' + esc(LANGUAGES[c]) + '</option>'; }).join('') + '</select></label>' +
+                check('debugLogging', 'settings.debugLogging') + '<span class="cl-hint">' + e('settings.debugLoggingHint') + '</span>' : '') +
 
             (app ? '<h2>' + e('settings.security') + '</h2><p class="cl-hint" data-el="pwState"></p>' +
                 '<label>' + e('settings.newPassword') + '<input data-el="newPassword" type="password" autocomplete="new-password" placeholder="' + e('settings.newPasswordPlaceholder') + '"></label>' +
@@ -197,7 +206,7 @@
         // The language comes from the settings (via status), so status loads first, then the UI is drawn.
         var ready = api('status').then(function (s) {
             state.status = s;
-            return loadLanguage(s.language);
+            return loadLanguage(s.language, opts.language);
         }).then(function () {
             root.innerHTML = template(host);
             form = el('form');

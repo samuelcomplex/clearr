@@ -65,7 +65,7 @@ Tick **Ignore** for accounts that shouldn't count, such as a shared living-room 
 
 | Setting | Default | |
 |---|---|---|
-| **Language** | Automatic | The language of Clearr's pages: **English** or **Svenska**. *Automatic* follows your browser, falling back to English. Messages passed on from Sonarr, Radarr or Jellyfin (such as a connection error) stay in their own language. |
+| **Language** | Automatic | App only. The language of Clearr's pages: **English** or **Svenska**. *Automatic* follows your browser, falling back to English. The plugin has no setting: it follows each Jellyfin user's own display language (*Settings → Display → Display language*), and uses English for languages Clearr doesn't have yet. Messages passed on from Sonarr, Radarr or Jellyfin (such as a connection error) stay in their own language. |
 | **Debug logging** | Off | App only. Writes every decision to the log files. Turn it on while tracking down a problem. |
 
 ## Security (app)

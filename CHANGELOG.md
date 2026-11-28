@@ -27,7 +27,7 @@ The first public release.
 
 ### Shows and movies, languages
 - Shows and movies each have their own cleanup mode and daily run time (two scheduled tasks in the plugin), so you can clean up one without the other.
-- English and Swedish, following the browser or a setting. Reasons, History and results are translated too; older History entries keep their English text.
+- English and Swedish, following the browser or a setting (the plugin follows each Jellyfin user's display language). Reasons, History and results are translated too; older History entries keep their English text.
 
 ### Running
 - Docker image for amd64 and arm64 on Alpine, running as `PUID`/`PGID` (or Docker's `user:`), with a health check.
