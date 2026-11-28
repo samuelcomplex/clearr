@@ -249,5 +249,12 @@
   "notify.titleError": "Clearrs rensning blev inte klar",
   "notify.more": "…och {count} till",
   "notify.testTitle": "Clearr-test",
-  "notify.testBody": "Aviseringar från Clearr kommer hit."
+  "notify.testBody": "Aviseringar från Clearr kommer hit.",
+  "roots.title": "Rotmappar",
+  "roots.hint": "Allt i en rotmapp du kryssar i här behålls, till exempel en mapp för barn eller anime. Listan kommer från Sonarr och Radarr.",
+  "roots.leaveOut": "Behåll allt i {path} ({from})",
+  "roots.none": "Anslut Sonarr eller Radarr för att se deras rotmappar.",
+  "roots.missing": "finns inte längre i Sonarr/Radarr",
+  "keptBy.Root folder": "rotmapp",
+  "keep.rootFolder": "Behålls eftersom dess rotmapp behålls i inställningarna"
 }

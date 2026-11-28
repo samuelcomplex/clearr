@@ -44,5 +44,6 @@ The first public release.
 
 ### Keeping
 - Favourites in Jellyfin are kept automatically (Keep favourites, on by default).
+- Whole Sonarr/Radarr root folders (a Kids or Anime folder, say) can be kept from Settings.
 
 [Unreleased]: https://github.com/samuelcomplex/clearr/commits/main

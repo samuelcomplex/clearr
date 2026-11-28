@@ -99,6 +99,7 @@ public sealed class ClearrEngine : IDisposable
                     var hit = Match(show.ProviderIds, sonarr, "Tvdb", "Tmdb", "Imdb");
                     show.ArrId = hit?.Id;
                     show.ArrKeep = hit != null && keepTag.Length > 0 && hit.TagLabels.Any(t => string.Equals(t, keepTag, StringComparison.OrdinalIgnoreCase));
+                    show.ArrRootFolder = hit?.RootFolder;
                 }
             }
             catch (Exception ex) when (ex is ApiException or ArgumentException)
@@ -119,6 +120,7 @@ public sealed class ClearrEngine : IDisposable
                     movie.ArrId = hit?.Item.Id;
                     movie.ArrHasFile = hit?.FileId != null;
                     movie.ArrKeep = hit != null && keepTag.Length > 0 && hit.Item.TagLabels.Any(t => string.Equals(t, keepTag, StringComparison.OrdinalIgnoreCase));
+                    movie.ArrRootFolder = hit?.Item.RootFolder;
                 }
             }
             catch (Exception ex) when (ex is ApiException or ArgumentException)
@@ -236,6 +238,28 @@ public sealed class ClearrEngine : IDisposable
         }
 
         await Notifier.SendAsync(_http.CreateClient("clearr"), n, notice, _log, CancellationToken.None);
+    }
+
+    /// <summary>Root folders from Sonarr and Radarr (empty when not connected), for the Settings page.</summary>
+    public async Task<(List<string> Sonarr, List<string> Radarr)> RootFoldersAsync(CancellationToken ct)
+    {
+        var s = _settings();
+        async Task<List<string>> Get(Func<Task<List<string>>> load)
+        {
+            try
+            {
+                return await load();
+            }
+            catch (Exception ex) when (ex is ApiException or ArgumentException)
+            {
+                _log.LogDebug("Root folders not available: {Message}", ex.Message);
+                return new();
+            }
+        }
+
+        var sonarr = s.Sonarr.IsConfigured ? Get(() => new SonarrClient(_http.CreateClient("clearr"), s.Sonarr).RootFoldersAsync(ct)) : Task.FromResult(new List<string>());
+        var radarr = s.Radarr.IsConfigured ? Get(() => new RadarrClient(_http.CreateClient("clearr"), s.Radarr).RootFoldersAsync(ct)) : Task.FromResult(new List<string>());
+        return (await sonarr, await radarr);
     }
 
     /// <summary>Sends a test message to the configured targets.</summary>
@@ -609,6 +633,7 @@ public static class SettingsRules
         s.MaxDeleteGbPerRun = Math.Max(0, s.MaxDeleteGbPerRun);
         s.KeepTag = (s.KeepTag ?? "").Trim();
         s.ExcludedUserIds ??= new();
+        s.ExcludedRootFolders = (s.ExcludedRootFolders ?? new()).Select(RootFolders.Normalize).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         foreach (var time in new[] { s.ShowsScheduleTime, s.MoviesScheduleTime })
         {
             if (!TimeOnly.TryParseExact((time ?? "").Trim(), TimeFormats, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
@@ -621,4 +646,18 @@ public static class SettingsRules
         s.MoviesScheduleTime = s.MoviesScheduleTime.Trim();
         return s.Https.Port is < 1 or > 65535 ? "HTTPS port must be between 1 and 65535" : null;
     }
+}
+
+public static class RootFolders
+{
+    /// <summary>Paths compare with or without a trailing slash, ignoring case.</summary>
+    public static string Normalize(string? path)
+    {
+        var p = (path ?? "").Trim();
+        return p.Length > 1 ? p.TrimEnd('/', '\\') : p;
+    }
+
+    public static bool Excluded(string? root, ClearrSettings s) =>
+        root != null && s.ExcludedRootFolders.Count > 0
+        && s.ExcludedRootFolders.Any(x => string.Equals(Normalize(x), Normalize(root), StringComparison.OrdinalIgnoreCase));
 }

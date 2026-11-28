@@ -128,6 +128,9 @@ public class ClearrSettings
     // ---- Users ----
     public List<string> ExcludedUserIds { get; set; } = new();
 
+    // ---- Root folders left out of cleanup (Sonarr/Radarr paths) ----
+    public List<string> ExcludedRootFolders { get; set; } = new();
+
     // ---- Notifications ----
     public NotificationSettings Notifications { get; set; } = new();
 

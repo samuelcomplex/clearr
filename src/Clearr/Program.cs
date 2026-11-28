@@ -333,6 +333,12 @@ api.MapGet("/summary", (ClearrEngine svc, SettingsStore st, Scheduler sch) =>
     return Results.Text(o.ToJsonString(), "application/json");
 });
 
+api.MapGet("/rootfolders", async (HttpContext ctx, ClearrEngine svc) =>
+{
+    var (sonarr, radarr) = await svc.RootFoldersAsync(ctx.RequestAborted);
+    return Results.Ok(new { sonarr, radarr });
+});
+
 api.MapPost("/notifications/test", async (HttpContext ctx, ClearrEngine svc, SettingsStore st) =>
 {
     var body = await JsonNode.ParseAsync(ctx.Request.Body);

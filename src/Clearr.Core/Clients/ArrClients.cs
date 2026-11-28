@@ -3,7 +3,7 @@ using Clearr.Core;
 
 namespace Clearr.Clients;
 
-public record ArrItem(int Id, string Title, List<string> TagLabels);
+public record ArrItem(int Id, string Title, List<string> TagLabels, string? RootFolder = null);
 
 public record EpisodeFile(int Id, int SeasonNumber, long Size, string? Path);
 
@@ -20,6 +20,24 @@ public abstract class ArrClientBase
     public string Name { get; }
 
     protected HttpApi Api { get; }
+
+    /// <summary>The root folder an item lives in: rootFolderPath, or the parent of its path.</summary>
+    protected static string? RootOf(JsonNode? item)
+    {
+        var root = item.Str("rootFolderPath");
+        if (string.IsNullOrWhiteSpace(root) && item.Str("path") is { Length: > 0 } path)
+        {
+            var trimmed = path.TrimEnd('/', '\\');
+            var cut = Math.Max(trimmed.LastIndexOf('/'), trimmed.LastIndexOf('\\'));
+            root = cut > 0 ? trimmed[..cut] : null;
+        }
+
+        return string.IsNullOrWhiteSpace(root) ? null : root;
+    }
+
+    /// <summary>The root folders set up in Sonarr/Radarr.</summary>
+    public async Task<List<string>> RootFoldersAsync(CancellationToken ct) =>
+        (await Api.GetAsync("api/v3/rootfolder", ct)).Arr().Select(r => r.Str("path")).OfType<string>().Where(p => p.Length > 0).ToList();
 
     protected abstract string ResourcePath { get; }
 
@@ -86,7 +104,7 @@ public class SonarrClient : ArrClientBase
         var index = new Dictionary<string, ArrItem>(StringComparer.OrdinalIgnoreCase);
         foreach (var s in (await Api.GetAsync("api/v3/series", ct)).Arr())
         {
-            var item = new ArrItem(s.Int("id")!.Value, s.Str("title") ?? "?", s.Arr("tags").Select(t => tags.GetValueOrDefault(t.GetValue<int>(), "")).ToList());
+            var item = new ArrItem(s.Int("id")!.Value, s.Str("title") ?? "?", s.Arr("tags").Select(t => tags.GetValueOrDefault(t.GetValue<int>(), "")).ToList(), RootOf(s));
             if ((s.Int("tvdbId") ?? 0) > 0)
             {
                 index["tvdb:" + s.Int("tvdbId")] = item;
@@ -147,7 +165,7 @@ public class RadarrClient : ArrClientBase
         var index = new Dictionary<string, RadarrMovie>(StringComparer.OrdinalIgnoreCase);
         foreach (var m in (await Api.GetAsync("api/v3/movie", ct)).Arr())
         {
-            var item = new ArrItem(m.Int("id")!.Value, m.Str("title") ?? "?", m.Arr("tags").Select(t => tags.GetValueOrDefault(t.GetValue<int>(), "")).ToList());
+            var item = new ArrItem(m.Int("id")!.Value, m.Str("title") ?? "?", m.Arr("tags").Select(t => tags.GetValueOrDefault(t.GetValue<int>(), "")).ToList(), RootOf(m));
             var file = m["movieFile"];
             var rm = new RadarrMovie(item, file.Int("id"), file != null ? file.Long("size") : 0);
             if ((m.Int("tmdbId") ?? 0) > 0)

@@ -35,6 +35,7 @@ public class ShowInfo
     // Filled from Sonarr
     public int? ArrId { get; set; }
     public bool ArrKeep { get; set; }
+    public string? ArrRootFolder { get; set; }
 }
 
 public class MovieInfo
@@ -48,6 +49,7 @@ public class MovieInfo
     // Filled from Radarr
     public int? ArrId { get; set; }
     public bool ArrKeep { get; set; }
+    public string? ArrRootFolder { get; set; }
     public bool ArrHasFile { get; set; }
 }
 

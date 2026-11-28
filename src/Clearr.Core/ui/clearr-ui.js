@@ -159,6 +159,7 @@
             check('refreshJellyfinAfterCleanup', 'settings.refreshJellyfin') +
             '<label>' + e('settings.keepTag') + '<input name="keepTag"><span class="cl-hint">' + e('settings.keepTagHint') + '</span></label>' +
             check('keepFavorites', 'settings.keepFavorites') +
+            '<h3>' + e('roots.title') + '</h3><p class="cl-hint">' + e('roots.hint') + '</p><div data-el="roots" class="cl-users"></div>' +
 
             '<h2>' + e('settings.droppedOff') + '</h2>' +
             '<label>' + e('settings.inactiveDays') + '<input name="inactiveDays" type="number" min="1"></label>' +
@@ -313,7 +314,7 @@
             var external = kept && keptBy && keptBy !== 'Clearr' && keptBy !== 'Sonarr tag' && keptBy !== 'Radarr tag';
             var by = !keptBy ? '' : has('keptBy.' + keptBy) ? t('keptBy.' + keptBy) : keptBy;
             return '<button type="button" class="cl-keep' + (kept ? ' cl-on' : '') + '" data-id="' + esc(id) + '" data-kind="' + k + '" data-keep="' + (!kept) + '"' +
-                (keptBy === 'Favourite' ? ' disabled title="' + e('keep.favourite') + '"' : external ? ' disabled title="' + e('keep.external', { by: by }) + '"' : ' title="' + (kept ? e('keep.keptTitle', { by: by }) : e('keep.keepTitle')) + '"') +
+                (keptBy === 'Favourite' ? ' disabled title="' + e('keep.favourite') + '"' : keptBy === 'Root folder' ? ' disabled title="' + e('keep.rootFolder') + '"' : external ? ' disabled title="' + e('keep.external', { by: by }) + '"' : ' title="' + (kept ? e('keep.keptTitle', { by: by }) : e('keep.keepTitle')) + '"') +
                 '>' + (kept ? e('keep.kept') + ' ✓' : e('keep.keep')) + '</button>';
         }
 
@@ -536,6 +537,7 @@
                     setPath(s, f.name, v);
                 });
                 s.excludedUserIds = all('.cl-exclude:checked').map(function (x) { return x.value; });
+                s.excludedRootFolders = all('.cl-root:checked').map(function (x) { return x.value; });
                 var body = { settings: s };
                 if (host === 'app') { body.newPassword = el('newPassword').value; body.clearPassword = el('clearPassword').checked; }
                 var out = el('saveMsg');
@@ -596,7 +598,27 @@
                     renderHttps();
                 }
                 loadUsers(s.excludedUserIds || []);
+                loadRoots(s.excludedRootFolders || []);
             });
+        }
+
+        function loadRoots(excluded) {
+            var norm = function (p) { return p.length > 1 ? p.replace(/[\\/]+$/, '').toLowerCase() : p.toLowerCase(); };
+            var isOut = function (p) { return excluded.some(function (x) { return norm(x) === norm(p); }); };
+            el('roots').innerHTML = '<span class="cl-muted cl-small">' + e('settings.loadingUsers') + '</span>';
+            api('rootfolders').then(function (r) {
+                var rows = [];
+                var seen = [];
+                var add = function (path, from) {
+                    if (seen.indexOf(norm(path)) >= 0) return;
+                    seen.push(norm(path));
+                    rows.push('<label class="cl-check"><input type="checkbox" class="cl-root" value="' + esc(path) + '"' + (isOut(path) ? ' checked' : '') + '> ' + e('roots.leaveOut', { path: path, from: from }) + '</label>');
+                };
+                r.sonarr.forEach(function (p) { add(p, 'Sonarr'); });
+                r.radarr.forEach(function (p) { add(p, 'Radarr'); });
+                excluded.forEach(function (p) { add(p, t('roots.missing')); });
+                el('roots').innerHTML = rows.length ? rows.join('') : '<span class="cl-muted cl-small">' + e('roots.none') + '</span>';
+            }).catch(function (err) { el('roots').innerHTML = '<span class="cl-error">' + esc(err.message) + '</span>'; });
         }
 
         function loadUsers(excluded) {

@@ -48,6 +48,7 @@ Nothing is ever removed unless that kind's mode is **Delete**, and the mode is c
 | **Grace period** | 7 days | Time between the last viewer finishing and the removal. |
 | **Refresh the Jellyfin library after a cleanup** | On | So removed items disappear from Jellyfin straight away. |
 | **Keep tag** | `keep` | Items with this tag in Jellyfin, Sonarr or Radarr are never removed. Case doesn't matter. |
+| **Root folders** | none | Tick a Sonarr or Radarr root folder (such as `/kids` or `/anime`) to keep everything in it, instead of marking each item Keep. The list is read from Sonarr and Radarr. Only items Sonarr/Radarr manage have a root folder. |
 | **Keep favourites** | On | A show, season or movie that a tracked user has marked as a favourite in Jellyfin is kept, like a Keep. Favourites of users excluded under **Users** don't count. Unmark it in Jellyfin to let it go. |
 
 ## Flags

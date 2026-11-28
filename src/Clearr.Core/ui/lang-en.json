@@ -249,5 +249,12 @@
   "notify.titleError": "Clearr's cleanup didn't finish",
   "notify.more": "…and {count} more",
   "notify.testTitle": "Clearr test",
-  "notify.testBody": "Notifications from Clearr arrive here."
+  "notify.testBody": "Notifications from Clearr arrive here.",
+  "roots.title": "Root folders",
+  "roots.hint": "Everything in a root folder you tick here is kept, such as a Kids or Anime folder. The list comes from Sonarr and Radarr.",
+  "roots.leaveOut": "Keep everything in {path} ({from})",
+  "roots.none": "Connect Sonarr or Radarr to see their root folders.",
+  "roots.missing": "no longer in Sonarr/Radarr",
+  "keptBy.Root folder": "root folder",
+  "keep.rootFolder": "Kept because its root folder is kept in Settings"
 }

@@ -181,6 +181,24 @@ internal static class SafetyTests
         Expect(!bf.World.EpisodeFiles.Any(f => f.SeriesId == fav1.SonarrId), "With the option off, favourites are cleaned up like anything else");
         await envf.StopAsync();
 
+        // Root folders left out: everything in them is kept, wherever the trailing slash is.
+        var br = new WorldBuilder(seed: 7);
+        br.User("u1", "Anna");
+        var kids = br.Show("Kids Show", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1, root: "/media/kids/");
+        var adult = br.Show("Adult Show", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1, root: "/media/tv/");
+        var kidsMovie = br.Movie("Kids Movie", inRadarr: true, gb: 1, root: "/media/kids-movies");
+        br.WatchAll("u1", kids, 30);
+        br.WatchAll("u1", adult, 30);
+        br.WatchMovie("u1", kidsMovie, true, 30);
+        var envr = await Env.StartAsync(br.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.Delete, ExcludedRootFolders = new() { "/Media/Kids", "/media/kids-movies/" } });
+        var (_, rootReport, _, _) = await envr.Engine.BuildAsync(default);
+        Expect(rootReport.Shows.Single(x => x.Name == "Kids Show").KeptBy == "Root folder" && rootReport.Movies.Single().KeptBy == "Root folder" && rootReport.Shows.Single(x => x.Name == "Adult Show").Eligible, "Items in a left-out root folder are kept; others aren't");
+        await envr.Engine.CleanupAsync(false, true, default);
+        Expect(br.World.EpisodeFiles.Any(f => f.SeriesId == kids.SonarrId) && br.World.RadarrMovies[kidsMovie.RadarrId!.Value]["movieFile"] != null && !br.World.EpisodeFiles.Any(f => f.SeriesId == adult.SonarrId), "A real cleanup leaves left-out root folders alone");
+        var (sonarrRoots, radarrRoots) = await envr.Engine.RootFoldersAsync(default);
+        Expect(sonarrRoots.Contains("/media/kids/") && sonarrRoots.Contains("/media/tv/") && radarrRoots.SequenceEqual(new[] { "/media/kids-movies" }), "Root folders listed from Sonarr and Radarr");
+        await envr.StopAsync();
+
         // Grace period, someone still watching, someone who never started.
         var b4 = new WorldBuilder(seed: 4);
         b4.User("u1", "Anna");
@@ -205,6 +223,7 @@ internal static class SafetyTests
         for (var seed = 100; seed < 100 + worlds; seed++)
         {
             var rnd = new Random(seed);
+            var rootRnd = new Random(seed * 7919); // separate, so adding root folders didn't change the other random choices
             var b = new WorldBuilder(seed);
             var users = Enumerable.Range(1, rnd.Next(1, 4)).Select(i => b.User("u" + i, "User" + i)).ToList();
             var shows = new List<WorldBuilder.ShowRef>();
@@ -212,13 +231,14 @@ internal static class SafetyTests
             {
                 var eps = Enumerable.Range(0, rnd.Next(1, 4)).Select(_ => rnd.Next(1, 5)).ToArray();
                 shows.Add(b.Show("Show" + i, rnd.Next(3) == 0 ? "Continuing" : "Ended", eps, inSonarr: rnd.Next(5) > 0, gbPerFile: rnd.Next(1, 5),
-                    extraFile: rnd.Next(7) == 0, sonarrTags: rnd.Next(7) == 0 ? new[] { "keep" } : null, jellyfinTags: rnd.Next(10) == 0 ? new[] { "Keep" } : null));
+                    extraFile: rnd.Next(7) == 0, sonarrTags: rnd.Next(7) == 0 ? new[] { "keep" } : null, jellyfinTags: rnd.Next(10) == 0 ? new[] { "Keep" } : null,
+                    root: rootRnd.Next(4) == 0 ? "/kids/" : "/tv/"));
             }
 
             var movies = new List<WorldBuilder.MovieRef>();
             for (var i = 0; i < rnd.Next(0, 5); i++)
             {
-                movies.Add(b.Movie("Movie" + i, inRadarr: rnd.Next(5) > 0, gb: rnd.Next(1, 9), jellyfinTags: rnd.Next(10) == 0 ? new[] { "keep" } : null));
+                movies.Add(b.Movie("Movie" + i, inRadarr: rnd.Next(5) > 0, gb: rnd.Next(1, 9), jellyfinTags: rnd.Next(10) == 0 ? new[] { "keep" } : null, root: rootRnd.Next(4) == 0 ? "/kids-movies" : "/movies"));
             }
 
             foreach (var u in users)
@@ -269,6 +289,7 @@ internal static class SafetyTests
                 MaxDeleteGbPerRun = new[] { 0, 2, 5, 12, 50 }[rnd.Next(5)],
                 ExcludedUserIds = users.Where(_ => rnd.Next(5) == 0).ToList(),
                 KeepFavorites = rnd.Next(3) > 0,
+                ExcludedRootFolders = rootRnd.Next(8) switch { 0 or 1 => new() { "/KIDS", "/kids-movies/" }, 2 => new() { "/tv" }, _ => new() },
             };
             var dryRun = rnd.Next(5) == 0;
             var scope = rnd.Next(5) switch { 0 => CleanupScope.Shows, 1 => CleanupScope.Movies, _ => CleanupScope.All };
@@ -391,7 +412,9 @@ internal static class SafetyTests
 
         private bool Favourite(string id) => _s.KeepFavorites && _b.World.Favorites.Any(f => f.Item == id && !_s.ExcludedUserIds.Contains(f.User));
 
-        private bool ShowKept(WorldBuilder.ShowRef show) => _kept.Contains(show.Id) || TagKept(show.JellyfinTags) || TagKept(show.SonarrTags) || Favourite(show.Id);
+        private bool RootKept(string? root) => root != null && _s.ExcludedRootFolders.Any(x => string.Equals(x.TrimEnd('/'), root.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
+
+        private bool ShowKept(WorldBuilder.ShowRef show) => _kept.Contains(show.Id) || TagKept(show.JellyfinTags) || TagKept(show.SonarrTags) || Favourite(show.Id) || RootKept(show.Root);
 
         public bool SeasonAllowed(WorldBuilder.ShowRef show, int season)
         {
@@ -426,7 +449,7 @@ internal static class SafetyTests
         }
 
         public bool MovieAllowed(WorldBuilder.MovieRef m) =>
-            !_kept.Contains(m.Id) && !TagKept(m.JellyfinTags) && !Favourite(m.Id) && Done(new List<string> { m.Id });
+            !_kept.Contains(m.Id) && !TagKept(m.JellyfinTags) && !Favourite(m.Id) && !RootKept(m.Root) && Done(new List<string> { m.Id });
 
         private bool NoUnseenFiles(WorldBuilder.ShowRef show, int season) =>
             _b.World.EpisodeFiles.Count(f => f.SeriesId == show.SonarrId && f.Season == season) <= show.Episodes.Count(e => e.Season == season);
@@ -549,9 +572,9 @@ internal static class SafetyTests
 
         public FakeWorld World { get; } = new();
 
-        public record ShowRef(string Id, string Name, string Status, int? SonarrId, List<(string Id, int Number)> Seasons, List<FakeWorld.Ep> Episodes, string[] JellyfinTags, string[] SonarrTags);
+        public record ShowRef(string Id, string Name, string Status, int? SonarrId, List<(string Id, int Number)> Seasons, List<FakeWorld.Ep> Episodes, string[] JellyfinTags, string[] SonarrTags, string? Root);
 
-        public record MovieRef(string Id, string Name, int? RadarrId, string[] JellyfinTags);
+        public record MovieRef(string Id, string Name, int? RadarrId, string[] JellyfinTags, string? Root);
 
         private static string NewId() => Guid.NewGuid().ToString("N");
 
@@ -561,7 +584,7 @@ internal static class SafetyTests
             return id;
         }
 
-        public ShowRef Show(string name, string status, int[] eps, bool inSonarr, int gbPerFile, bool extraFile = false, string[]? sonarrTags = null, string[]? jellyfinTags = null)
+        public ShowRef Show(string name, string status, int[] eps, bool inSonarr, int gbPerFile, bool extraFile = false, string[]? sonarrTags = null, string[]? jellyfinTags = null, string root = "/tv/")
         {
             var show = new FakeWorld.Show(NewId(), name, status, ++_tvdb, new(), (jellyfinTags ?? Array.Empty<string>()).ToList());
             var episodes = new List<FakeWorld.Ep>();
@@ -598,6 +621,8 @@ internal static class SafetyTests
                     ["id"] = sid,
                     ["title"] = name,
                     ["tvdbId"] = show.Tvdb,
+                    ["rootFolderPath"] = root,
+                    ["path"] = root.TrimEnd('/') + "/" + name,
                     ["monitored"] = true,
                     ["tags"] = new JsonArray(tagIds),
                     ["seasons"] = new JsonArray(Enumerable.Range(0, eps.Length + 1).Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["monitored"] = n > 0 }).ToArray()),
@@ -612,10 +637,10 @@ internal static class SafetyTests
                 }
             }
 
-            return new ShowRef(show.Id, name, status, sid, show.Seasons, episodes, jellyfinTags ?? Array.Empty<string>(), inSonarr ? sonarrTags ?? Array.Empty<string>() : Array.Empty<string>());
+            return new ShowRef(show.Id, name, status, sid, show.Seasons, episodes, jellyfinTags ?? Array.Empty<string>(), inSonarr ? sonarrTags ?? Array.Empty<string>() : Array.Empty<string>(), inSonarr ? root : null);
         }
 
-        public MovieRef Movie(string name, bool inRadarr, int gb, string[]? jellyfinTags = null)
+        public MovieRef Movie(string name, bool inRadarr, int gb, string[]? jellyfinTags = null, string root = "/movies")
         {
             var m = new FakeWorld.Movie(NewId(), name, 2020, ++_tvdb, (jellyfinTags ?? Array.Empty<string>()).ToList());
             World.Movies.Add(m);
@@ -628,6 +653,7 @@ internal static class SafetyTests
                     ["id"] = rid,
                     ["title"] = name,
                     ["tmdbId"] = m.Tmdb,
+                    ["rootFolderPath"] = root,
                     ["monitored"] = true,
                     ["hasFile"] = true,
                     ["tags"] = new JsonArray(),
@@ -635,7 +661,7 @@ internal static class SafetyTests
                 };
             }
 
-            return new MovieRef(m.Id, name, rid, jellyfinTags ?? Array.Empty<string>());
+            return new MovieRef(m.Id, name, rid, jellyfinTags ?? Array.Empty<string>(), inRadarr ? root : null);
         }
 
         public void Watch(string user, IEnumerable<FakeWorld.Ep> eps, int daysAgo)

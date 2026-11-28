@@ -54,7 +54,7 @@ public static class Analyzer
         }
 
         var allEpisodes = seasons.SelectMany(x => x.Episodes).ToList();
-        var (showKept, showKeptBy) = Kept(show.Id, show.Tags, show.ArrKeep, "Sonarr", s, keptInClearr, lib, users);
+        var (showKept, showKeptBy) = Kept(show.Id, show.Tags, show.ArrKeep, "Sonarr", s, keptInClearr, lib, users, show.ArrRootFolder);
 
         var r = new ShowReport
         {
@@ -77,7 +77,7 @@ public static class Analyzer
 
         foreach (var season in seasons)
         {
-            var (seasonKept, seasonKeptBy) = Kept(season.Id, season.Tags, false, null, s, keptInClearr, lib, users);
+            var (seasonKept, seasonKeptBy) = Kept(season.Id, season.Tags, false, null, s, keptInClearr, lib, users, null);
             var sr = new SeasonReport
             {
                 SeasonId = season.Id,
@@ -125,7 +125,7 @@ public static class Analyzer
 
     private static MovieReport AnalyzeMovie(MovieInfo movie, LibrarySnapshot lib, ClearrSettings s, List<MediaUser> users, Func<string, bool> keptInClearr, DateTime now, bool direct)
     {
-        var (kept, keptBy) = Kept(movie.Id, movie.Tags, movie.ArrKeep, "Radarr", s, keptInClearr, lib, users);
+        var (kept, keptBy) = Kept(movie.Id, movie.Tags, movie.ArrKeep, "Radarr", s, keptInClearr, lib, users, movie.ArrRootFolder);
         var r = new MovieReport
         {
             MovieId = movie.Id,
@@ -154,7 +154,7 @@ public static class Analyzer
         return r;
     }
 
-    private static (bool, string?) Kept(string id, List<string> tags, bool arrKeep, string? arrName, ClearrSettings s, Func<string, bool> keptInClearr, LibrarySnapshot lib, List<MediaUser> users)
+    private static (bool, string?) Kept(string id, List<string> tags, bool arrKeep, string? arrName, ClearrSettings s, Func<string, bool> keptInClearr, LibrarySnapshot lib, List<MediaUser> users, string? rootFolder)
     {
         if (keptInClearr(id))
         {
@@ -164,6 +164,11 @@ public static class Analyzer
         if (arrKeep)
         {
             return (true, arrName + " tag");
+        }
+
+        if (RootFolders.Excluded(rootFolder, s))
+        {
+            return (true, "Root folder");
         }
 
         var tag = (s.KeepTag ?? "").Trim();

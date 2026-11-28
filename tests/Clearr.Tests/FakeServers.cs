@@ -179,6 +179,8 @@ public static class FakeServers
         }
 
         Arr("sonarr", "sonarr-key", w.SonarrTags);
+        app.MapGet("/sonarr/api/v3/rootfolder", () => Results.Json(w.SonarrSeries.Values.Select(v => v["rootFolderPath"]?.GetValue<string>()).OfType<string>().Distinct().Select((p, i) => new { id = i + 1, path = p })));
+        app.MapGet("/radarr/api/v3/rootfolder", () => Results.Json(w.RadarrMovies.Values.Select(v => v["rootFolderPath"]?.GetValue<string>()).OfType<string>().Distinct().Select((p, i) => new { id = i + 1, path = p })));
         app.MapGet("/sonarr/api/v3/series", (HttpContext c) => ArrAuth(c, "sonarr-key") ? Results.Text(new JsonArray(w.SonarrSeries.Values.Select(v => v.DeepClone()).ToArray()).ToJsonString(), "application/json") : Results.StatusCode(401));
         app.MapGet("/sonarr/api/v3/series/{id:int}", (int id) => Results.Text(w.SonarrSeries[id].ToJsonString(), "application/json"));
         app.MapPut("/sonarr/api/v3/series/{id:int}", async (int id, HttpContext c) =>
