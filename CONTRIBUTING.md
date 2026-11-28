@@ -40,6 +40,16 @@ CI also builds with warnings as errors, runs CodeQL, lints the Dockerfile and wo
 
 Keep the UI and messages in plain English, and keep the plugin in mind: `Clearr.Core` must keep building for `net8.0` and work inside Jellyfin.
 
+## Translations
+
+All text lives in `src/Clearr.Core/ui/lang-<code>.json`, one file per language, used by both the app and the plugin. To add a language:
+
+1. Copy `lang-en.json` to `lang-<code>.json` (for example `lang-de.json`) and translate the values. Keep every `{placeholder}` as it is.
+2. Add the language to `LANGUAGES` at the top of `src/Clearr.Core/ui/clearr-ui.js`, with its own name for itself (`de: 'Deutsch'`).
+3. Run `npm run test:ui`, which checks that every key is there with the same placeholders.
+
+Anything missing falls back to English, so a partial translation still works.
+
 ## License
 
 By contributing you agree that your contribution is licensed under the [GPL-3.0](LICENSE), like the rest of Clearr.

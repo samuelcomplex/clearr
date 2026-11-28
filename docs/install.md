@@ -85,7 +85,7 @@ The plugin needs Jellyfin **10.11 or newer**.
 1. Open **Settings → Connections**. In the app, add **Jellyfin** (URL and an API key from *Jellyfin Dashboard → API Keys → +*). In both, add **Sonarr** and/or **Radarr** (URL and API key from *Settings → General*). Click **Test** on each, then **Save**.
 2. Look through **Shows** and **Movies**. Everyone's existing watch history counts from day one.
 3. Leave the mode on **Dry run** for a week or so. **History** shows what *would* have been cleared each night. Click **Keep** on anything you want to hold on to.
-4. When the list looks right, set **Cleanup mode** to **Delete**.
+4. When the list looks right, set the **Cleanup mode** for shows and/or movies to **Delete**. They're separate, so you can start with just one.
 
 If Clearr can be reached from outside your home network, set a password first (**Settings → Security**). Until a password is set, Clearr only answers devices on your local network. See [Reverse proxy](reverse-proxy.md).
 

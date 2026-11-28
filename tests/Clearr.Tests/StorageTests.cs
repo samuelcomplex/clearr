@@ -28,24 +28,38 @@ internal static class StorageTests
         File.WriteAllText(v0.File("settings.json"), old);
         var store = new SettingsStore(v0);
         var s = store.Get();
-        Expect(s.Mode == CleanupMode.Delete && s.GraceDays == 3 && s.Sonarr.ApiKey == "abc" && s.SchemaVersion == ClearrSettings.CurrentSchema, "Old settings load with every value intact and the current format version");
-        Expect(File.ReadAllText(v0.File("settings.v0.bak.json")) == old && File.ReadAllText(v0.File("settings.json")).Contains("\"schemaVersion\": 1"), "Upgrade keeps the original as settings.v0.bak.json and saves the new format");
+        Expect(s.ShowsMode == CleanupMode.Delete && s.MoviesMode == CleanupMode.Delete && s.GraceDays == 3 && s.Sonarr.ApiKey == "abc" && s.SchemaVersion == ClearrSettings.CurrentSchema, "Old settings load with every value intact and the current format version");
+        Expect(File.ReadAllText(v0.File("settings.v0.bak.json")) == old && File.ReadAllText(v0.File("settings.json")).Contains("\"schemaVersion\": 2"), "Upgrade keeps the original as settings.v0.bak.json and saves the new format");
         var again = new SettingsStore(v0);
         again.Get();
-        Expect(store.Notice?.Contains("upgraded") == true && again.Notice == null, "Upgrade is reported once, not on every start");
+        Expect(store.Notice?.ToString().Contains("upgraded") == true && again.Notice == null, "Upgrade is reported once, not on every start");
+
+        // Version 1: one mode and time for everything, "Remove finished movies" off.
+        var v1 = new ConfigPaths(Path.Combine(root, "v1"));
+        File.WriteAllText(v1.File("settings.json"), """{ "schemaVersion": 1, "mode": "Delete", "deleteMovies": false, "scheduleTime": "03:15" }""");
+        var s1 = new SettingsStore(v1).Get();
+        Expect(s1.ShowsMode == CleanupMode.Delete && s1.MoviesMode == CleanupMode.Off && s1.ShowsScheduleTime == "03:15" && s1.MoviesScheduleTime == "03:15", "Version 1 settings: shows keep the mode, movies Off (they weren't being removed), both keep the run time");
 
         // A damaged file must not stop Clearr from starting, and must fall back to the safe defaults.
         var broken = new ConfigPaths(Path.Combine(root, "broken"));
         File.WriteAllText(broken.File("settings.json"), "{ \"mode\": \"Delete\", ");
         var bs = new SettingsStore(broken);
-        Expect(bs.Get().Mode == CleanupMode.DryRun && bs.Notice?.Contains("couldn't be read") == true, "Damaged settings.json: starts in Dry run with defaults and says so");
+        Expect(bs.Get().ShowsMode == CleanupMode.DryRun && bs.Get().MoviesMode == CleanupMode.DryRun && bs.Notice?.ToString().Contains("couldn't be read") == true, "Damaged settings.json: starts in Dry run with defaults and says so");
         Expect(Directory.GetFiles(broken.Root, "settings.broken-*.json").Length == 1 && !File.Exists(broken.File("settings.json")), "Damaged settings.json is kept aside for inspection");
 
         // Written by a newer Clearr (a downgrade): load what's understood, keep a copy.
         var newer = new ConfigPaths(Path.Combine(root, "newer"));
-        File.WriteAllText(newer.File("settings.json"), """{ "schemaVersion": 99, "mode": "Off", "somethingNew": true }""");
+        File.WriteAllText(newer.File("settings.json"), """{ "schemaVersion": 99, "showsMode": "Off", "somethingNew": true }""");
         var ns = new SettingsStore(newer);
-        Expect(ns.Get().Mode == CleanupMode.Off && File.Exists(newer.File("settings.v99.bak.json")) && ns.Notice?.Contains("newer") == true, "Settings from a newer version: loaded, copy kept, reported");
+        Expect(ns.Get().ShowsMode == CleanupMode.Off && File.Exists(newer.File("settings.v99.bak.json")) && ns.Notice?.ToString().Contains("newer") == true, "Settings from a newer version: loaded, copy kept, reported");
+
+        // History keeps translatable messages (nested ones and people lists too) across a save and reload.
+        var hp = new ConfigPaths(Path.Combine(root, "history"));
+        var waiting = new Msg("reason.waiting", new() { ["people"] = new List<PersonArg> { new("Anna", 3, 10, new[] { "Sampled", "MidEpisode" }) } });
+        var blocked = new Msg("reason.blocked", new() { ["block"] = new Msg("block.showStatus", new() { ["status"] = "Continuing" }) });
+        new HistoryStore(hp).Add(new[] { new HistoryEntry { Action = "Skipped", Title = "X", Parts = { waiting, blocked }, Detail = Messages.English(new[] { waiting, blocked }) } });
+        var back = new HistoryStore(hp).GetAll().Single();
+        Expect(Messages.English(back.Parts) == "Waiting on Anna (3/10, sampled, mid-episode) · Everyone finished, but: Show status is Continuing" && back.Detail == Messages.English(back.Parts), "History messages survive a save and reload, and render the same English text");
 
         // Log files: format, rotation, and only real log names can be opened.
         var logDir = Path.Combine(root, "logs");

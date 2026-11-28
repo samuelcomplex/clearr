@@ -99,3 +99,5 @@
 .clearr .cl-log-Error b, .clearr .cl-log-Fatal b { color: #ef6b6b; }
 .clearr .cl-log-Debug { opacity: .75; }
 .clearr .cl-log-more { color: var(--cl-muted); padding-left: 2em; }
+
+.clearr .cl-restart-row { margin-top: 14px; }

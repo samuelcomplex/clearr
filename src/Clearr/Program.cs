@@ -87,9 +87,9 @@ var app = builder.Build();
 _ = app.Services.GetRequiredService<AuthService>(); // creates api.key and session.key at startup
 var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Clearr.Startup");
 startupLog.LogInformation("Clearr {Version} starting; config in {Config}, running as {User}", typeof(Program).Assembly.GetName().Version?.ToString(3), startupPaths.Root, Environment.UserName);
-if (settingsStore.Notice is string notice)
+if (settingsStore.Notice is Msg notice)
 {
-    startupLog.LogWarning("{Notice}", notice);
+    startupLog.LogWarning("{Notice}", notice.ToString());
 }
 
 if (https.Error != null)
@@ -136,11 +136,14 @@ api.MapGet("/status", (HttpContext ctx, AuthService auth, SettingsStore st, Sche
         configured = s.Jellyfin.IsConfigured,
         passwordRequired = auth.PasswordRequired,
         authenticated = auth.IsAuthenticated(ctx),
-        mode = s.Mode,
-        nextRun = sch.NextRun(s),
+        showsMode = s.ShowsMode,
+        moviesMode = s.MoviesMode,
+        nextShowsRun = sch.NextRun(s, CleanupScope.Shows),
+        nextMoviesRun = sch.NextRun(s, CleanupScope.Movies),
         lastRunAt = sch.LastRunAt,
         lastRunSummary = sch.LastRunSummary,
         notice = st.Notice,
+        language = s.Language,
         https = new { active = hs.ActivePort.HasValue, port = hs.ActivePort, certificate = hs.Certificate, error = hs.Error, restartNeeded = st.Get().Https.Enabled != hs.ActivePort.HasValue || (hs.ActivePort.HasValue && st.Get().Https.Port != hs.ActivePort) },
     });
 });
@@ -282,12 +285,12 @@ api.MapGet("/report", async (ClearrEngine svc, CancellationToken ct) =>
     }
 });
 
-api.MapPost("/cleanup", async (bool? dryRun, ClearrEngine svc, CancellationToken ct) =>
+api.MapPost("/cleanup", async (bool? dryRun, string? scope, ClearrEngine svc, CancellationToken ct) =>
 {
     var dry = dryRun ?? true;
     try
     {
-        var r = await svc.CleanupAsync(dry, record: !dry, ct);
+        var r = await svc.CleanupAsync(dry, record: !dry, ct, CleanupScopes.Parse(scope));
         return r.Error != null ? Results.Json(r, statusCode: 409) : Results.Ok(r);
     }
     catch (Exception ex) when (ex is ApiException or ArgumentException)

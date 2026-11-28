@@ -37,7 +37,8 @@ internal static class PerfTests
             Jellyfin = new() { Url = url + "/jf", ApiKey = "jf-key" },
             Sonarr = new() { Url = url + "/sonarr", ApiKey = "sonarr-key" },
             Radarr = new() { Url = url + "/radarr", ApiKey = "radarr-key" },
-            Mode = CleanupMode.DryRun,
+            ShowsMode = CleanupMode.DryRun,
+            MoviesMode = CleanupMode.DryRun,
             MaxDeleteGbPerRun = 0,
         });
         var f = new SimpleFactory();

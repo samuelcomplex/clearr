@@ -40,3 +40,4 @@ a { color: #2bc4a5; text-decoration: none; }
 .login-box button { background: #2bc4a5; border: 0; color: #062019; font-weight: 600; border-radius: 4px; padding: 8px; font: inherit; cursor: pointer; }
 .login-logo { width: 56px; height: 56px; margin: 0 auto; }
 .error-text { color: #e5484d; min-height: 1.2em; }
+#statusModes .mode-badge { margin-top: 6px; }

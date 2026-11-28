@@ -139,7 +139,8 @@ settings.Save(new ClearrSettings
     Jellyfin = new() { Url = url + "/jf", ApiKey = "jf-key" },
     Sonarr = new() { Url = url + "/sonarr", ApiKey = "sonarr-key" },
     Radarr = new() { Url = url + "/radarr", ApiKey = "radarr-key" },
-    Mode = CleanupMode.DryRun,
+    ShowsMode = CleanupMode.DryRun,
+    MoviesMode = CleanupMode.DryRun,
 });
 
 var factory = new SimpleFactory();
@@ -180,7 +181,7 @@ Expect(dry.Actions.Any(a => a.Action == "Skipped" && a.Title == "New Episode Sho
 Expect(w.EpisodeFiles.Count == filesBefore && w.Log.Count == 0 && history.GetAll().Count == 0, "Dry run changed nothing and wasn't recorded");
 
 var refused = await svc.CleanupAsync(false, true, default);
-Expect(refused.Error != null && refused.Error.Contains("DryRun") && w.Log.Count == 0, "Real cleanup refused while mode is DryRun");
+Expect(refused.ErrorMsg?.Code == "error.refusedBoth" && refused.Error!.Contains("Dry run") && w.Log.Count == 0, "Real cleanup refused while mode is DryRun");
 
 // ---------------------------------------------------------------- keep
 var msg = await svc.SetKeepAsync(running.Id, "show", true, default);
@@ -196,7 +197,7 @@ await svc.SetKeepAsync(done.Seasons[1].Id, "season", false, default);
 
 // ---------------------------------------------------------------- delete with per-run limit
 var st = settings.Get();
-st.Mode = CleanupMode.Delete;
+st.SetModes(CleanupMode.Delete);
 st.MaxDeleteGbPerRun = 12;
 settings.Save(st);
 var run1 = await svc.CleanupAsync(false, true, default);

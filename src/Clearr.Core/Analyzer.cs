@@ -72,8 +72,8 @@ public static class Analyzer
 
         var maxSeason = seasons.Where(x => x.Number > 0).Select(x => x.Number!.Value).DefaultIfEmpty(-1).Max();
         var continuing = string.Equals(show.Status, "Continuing", StringComparison.OrdinalIgnoreCase);
-        var notManaged = !direct && lib.SonarrConnected && !show.ArrId.HasValue ? "Not in Sonarr — Clearr only removes shows Sonarr manages" : null;
-        var noSonarr = !direct && !lib.SonarrConnected ? "Sonarr isn't connected" : null;
+        var notManaged = !direct && lib.SonarrConnected && !show.ArrId.HasValue ? new Msg("block.notInSonarr") : null;
+        var noSonarr = !direct && !lib.SonarrConnected ? new Msg("block.sonarrOff") : null;
 
         foreach (var season in seasons)
         {
@@ -92,13 +92,14 @@ public static class Analyzer
                 sr.Users.Add(Measure(u, season.Episodes, lib, s, now));
             }
 
-            string? block = null;
+            Msg? block = null;
             if (s.ProtectLatestSeasonOfContinuing && continuing && season.Number == maxSeason)
             {
-                block = "Newest season of a show that's still continuing";
+                block = new Msg("block.newestSeason");
             }
 
-            (sr.Eligible, sr.Reason) = Decide(sr.Users, s, now, showKept || seasonKept, block ?? noSonarr ?? notManaged);
+            (sr.Eligible, sr.ReasonMsg) = Decide(sr.Users, s, now, showKept || seasonKept, block ?? noSonarr ?? notManaged);
+            sr.Reason = sr.ReasonMsg.ToString();
             r.Seasons.Add(sr);
         }
 
@@ -107,17 +108,18 @@ public static class Analyzer
             r.Users.Add(Measure(u, allEpisodes, lib, s, now));
         }
 
-        string? showBlock = null;
+        Msg? showBlock = null;
         if (s.RequireEndedForShowDelete && !string.Equals(show.Status, "Ended", StringComparison.OrdinalIgnoreCase))
         {
-            showBlock = show.Status != null ? $"Show status is {show.Status}" : "Show status is unknown (not marked Ended)";
+            showBlock = show.Status != null ? new Msg("block.showStatus", new() { ["status"] = show.Status }) : new Msg("block.showStatusUnknown");
         }
         else if (r.Seasons.Any(x => x.Kept))
         {
-            showBlock = "A season is marked keep (other seasons can still be removed)";
+            showBlock = new Msg("block.seasonKept");
         }
 
-        (r.Eligible, r.Reason) = Decide(r.Users, s, now, showKept, showBlock ?? noSonarr ?? notManaged);
+        (r.Eligible, r.ReasonMsg) = Decide(r.Users, s, now, showKept, showBlock ?? noSonarr ?? notManaged);
+        r.Reason = r.ReasonMsg.ToString();
         return r;
     }
 
@@ -144,10 +146,11 @@ public static class Analyzer
             r.Users.Add(p);
         }
 
-        string? block = r.Via != null ? null
-            : !lib.RadarrConnected ? "Radarr isn't connected"
-            : "Not in Radarr — Clearr only removes movies Radarr manages";
-        (r.Eligible, r.Reason) = Decide(r.Users, s, now, kept, block);
+        Msg? block = r.Via != null ? null
+            : !lib.RadarrConnected ? new Msg("block.radarrOff")
+            : new Msg("block.notInRadarr");
+        (r.Eligible, r.ReasonMsg) = Decide(r.Users, s, now, kept, block);
+        r.Reason = r.ReasonMsg.ToString();
         return r;
     }
 
@@ -235,12 +238,12 @@ public static class Analyzer
         return p;
     }
 
-    internal static (bool, string) Decide(List<UserProgress> users, ClearrSettings s, DateTime now, bool kept, string? block)
+    internal static (bool, Msg) Decide(List<UserProgress> users, ClearrSettings s, DateTime now, bool kept, Msg? block)
     {
         var starters = users.Where(u => u.Status != WatchStatus.NotStarted).ToList();
         if (starters.Count == 0)
         {
-            return (false, "Nobody has started it");
+            return (false, new Msg("reason.notStarted"));
         }
 
         var counted = s.AbandonedUsersBlockCleanup ? starters : starters.Where(u => !u.IsAbandoned).ToList();
@@ -249,22 +252,22 @@ public static class Analyzer
 
         if (waiting.Count > 0)
         {
-            return (false, "Waiting on " + string.Join(", ", waiting.Select(Describe)));
+            return (false, new Msg("reason.waiting", new() { ["people"] = waiting.Select(u => new PersonArg(u.UserName, u.Watched, u.Total, u.Flags.ToList())).ToList() }));
         }
 
         if (finished.Count == 0)
         {
-            return (false, "Nobody has finished it (everyone who started dropped off)");
+            return (false, new Msg("reason.allDropped"));
         }
 
         if (kept)
         {
-            return (false, "Everyone finished, but it's marked keep");
+            return (false, new Msg("reason.kept"));
         }
 
         if (block != null)
         {
-            return (false, "Everyone finished, but: " + block);
+            return (false, new Msg("reason.blocked", new() { ["block"] = block }));
         }
 
         var lastFinish = finished.Where(u => u.FinishedAt.HasValue).Select(u => u.FinishedAt!.Value).DefaultIfEmpty(DateTime.MinValue).Max();
@@ -273,22 +276,14 @@ public static class Analyzer
             var graceEnds = lastFinish.AddDays(Math.Max(0, s.GraceDays));
             if (graceEnds > now)
             {
-                return (false, "Everyone finished; grace period until " + graceEnds.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                return (false, new Msg("reason.grace", new() { ["until"] = graceEnds.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) }));
             }
         }
 
+        var names = string.Join(", ", finished.Select(u => u.UserName));
         var skipped = starters.Count - counted.Count;
-        return (true, "Finished by " + string.Join(", ", finished.Select(u => u.UserName)) + (skipped > 0 ? $" ({skipped} dropped-off viewer(s) ignored)" : ""));
-    }
-
-    private static string Describe(UserProgress u)
-    {
-        var d = $"{u.UserName} ({u.Watched}/{u.Total}";
-        if (u.Flags.Count > 0)
-        {
-            d += ", " + string.Join(", ", u.Flags.Select(f => f == WatchFlag.MidEpisode ? "mid-episode" : f.ToLowerInvariant()));
-        }
-
-        return d + ")";
+        return (true, skipped > 0
+            ? new Msg("reason.readyIgnored", new() { ["names"] = names, ["ignored"] = skipped })
+            : new Msg("reason.ready", new() { ["names"] = names }));
     }
 }

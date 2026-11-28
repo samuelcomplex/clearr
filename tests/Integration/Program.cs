@@ -209,7 +209,7 @@ var s2Files = Directory.GetFiles(Path.Combine(media, "tv", ShowFolder, "Season 0
 Expect(s1Files.Length == 2 && s2Files.Length == 1, "Dry run left files on disk");
 
 var st = settings.Get();
-st.Mode = CleanupMode.Delete;
+st.SetModes(CleanupMode.Delete);
 settings.Save(st);
 var real = await svc.CleanupAsync(false, true, default);
 foreach (var a in real.Actions) Console.WriteLine($"  real: {a.Action} {a.Title} {a.SeasonName} :: {a.Detail}");

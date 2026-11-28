@@ -25,6 +25,8 @@ It's a companion to the *arr stack. **Sonarr and Radarr delete the files.** Clea
 - **Keep** anything with one click. It's mirrored as a `keep` tag in Sonarr/Radarr, and a `keep` tag set in Jellyfin, Sonarr or Radarr works too.
 - **Web UI for everything**: connections (with Test buttons), schedule, rules, users and password. There are no config files to edit.
 - Works on desktop and mobile. Optional password, optional **HTTPS** (your own certificate or a self-signed one), and an *arr-style API key.
+- **Shows and movies separately**: each has its own mode (Off, Dry run, Delete) and its own daily run.
+- **English and Swedish**, following your browser or a setting. More languages are one file each; see [CONTRIBUTING.md](CONTRIBUTING.md#translations).
 - **Logs page** with *arr-style log files, and a Debug option that records every decision.
 - Also available as a **Jellyfin plugin**: [Clearr for Jellyfin](https://github.com/samuelcomplex/clearr-plugin), same features, inside Jellyfin.
 
@@ -67,7 +69,7 @@ See the [install guide](docs/install.md) for `docker run`, Unraid, the Jellyfin 
    Click **Test** on each, then **Save**.
 2. Open **Shows** and **Movies** to see everyone's progress.
 3. Leave it in **Dry run** for a week or so. The History tab shows what *would* have been cleared each night. Click **Keep** on anything you want to hold onto.
-4. When the dry-run list looks right, set **Cleanup mode** to **Delete**.
+4. When the dry-run list looks right, set the **Cleanup mode** for shows and/or movies to **Delete**. Each has its own mode and daily run time, so you can start with just one.
 
 Until you set a password, Clearr only answers devices on your local network. Set one before making it reachable from outside, for example through a [reverse proxy](docs/reverse-proxy.md).
 
@@ -110,7 +112,7 @@ A viewer who is *In progress* with no progress for **30 days** is flagged: **Sam
 
 ## Safety
 
-- **Nothing is removed unless Cleanup mode is Delete.** That applies to the nightly run and the *Delete eligible now* button, which only appears in Delete mode. The server refuses deletion requests in any other mode, and checks the mode again before every single item, so switching away from Delete stops a run in progress.
+- **Nothing is removed unless the cleanup mode is Delete.** Shows and movies each have their own mode, and each applies to its own nightly run and to the *Delete eligible now* button on its page, which only appears in Delete mode. The server refuses deletion requests in any other mode, and checks the mode again before every single item, so switching away from Delete stops a run in progress.
 - **Preview cleanup** lists every item with its size (as reported by Sonarr/Radarr) and a total. *Delete eligible now* shows the same list again for you to confirm.
 - **Max GB per run** (default 50). Anything over the limit waits for the next night.
 - **Unmonitor before delete.** If unmonitoring fails, nothing is deleted.

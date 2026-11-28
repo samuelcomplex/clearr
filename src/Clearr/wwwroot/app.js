@@ -25,17 +25,28 @@
         e.preventDefault();
         api('login', 'POST', { password: $('#loginPassword').value }).then(function () {
             $('#loginPassword').value = ''; $('#loginError').textContent = ''; location.reload();
-        }).catch(function (err) { $('#loginError').textContent = err.message; });
+        }).catch(function (err) { $('#loginError').textContent = ClearrUI.t(err.status === 429 ? 'login.locked' : 'login.wrong'); });
     });
 
     $('#logout').addEventListener('click', function (e) { e.preventDefault(); api('logout', 'POST').then(function () { location.reload(); }); });
 
     function onStatus(s) {
+        var t = ClearrUI.t;
         $('#version').textContent = s.version;
-        $('#statusMode').textContent = { Off: 'Off', DryRun: 'Dry run', Delete: 'Delete mode' }[s.mode] || s.mode;
-        $('#statusMode').className = 'mode-badge mode-' + s.mode;
-        $('#statusNext').textContent = s.mode === 'Off' ? 'Daily run off' : 'Next run ' + ClearrUI.fmtDate(s.nextRun);
-        $('#statusLast').textContent = s.lastRunSummary ? 'Last: ' + s.lastRunSummary : '';
+        // One badge per kind (shows, movies), each with its own mode and next run.
+        $('#statusModes').innerHTML = '';
+        [['shows', s.showsMode, s.nextShowsRun], ['movies', s.moviesMode, s.nextMoviesRun]].forEach(function (k) {
+            var badge = document.createElement('div');
+            badge.className = 'mode-badge mode-' + k[1];
+            badge.textContent = t('modeFor.' + k[0], { mode: t('modeName.' + k[1]) });
+            var next = document.createElement('div');
+            next.className = 'muted small';
+            next.textContent = k[2] ? t('shell.nextRun', { kind: t('nav.' + k[0]), when: ClearrUI.fmtDate(k[2]) }) : t('shell.runOff', { kind: t('nav.' + k[0]) });
+            $('#statusModes').appendChild(badge);
+            $('#statusModes').appendChild(next);
+        });
+        $('#statusNext').textContent = '';
+        $('#statusLast').textContent = s.lastRunSummary ? t('shell.last', { summary: ClearrUI.msg(s.lastRunSummary) }) : '';
         $('#logout').classList.toggle('hidden', !s.passwordRequired);
     }
 
@@ -46,6 +57,8 @@
     }
 
     api('status').then(function (s) {
+        return ClearrUI.loadLanguage(s.language).then(function () { ClearrUI.translate(document); return s; });
+    }).then(function (s) {
         if (s.passwordRequired && !s.authenticated) { showLogin(); return; }
         $('#app').classList.remove('hidden');
         ui = ClearrUI.mount($('#root'), { host: 'app', api: api, onStatus: onStatus, onNavigate: function (p) { location.hash = p; } });

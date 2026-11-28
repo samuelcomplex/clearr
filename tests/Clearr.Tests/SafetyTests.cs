@@ -25,7 +25,7 @@ internal static class SafetyTests
         }
 
         await Scenarios(Expect);
-        await Randomized(Expect, worlds: 150);
+        await Randomized(Expect, worlds: 200);
         return fails;
     }
 
@@ -52,14 +52,14 @@ internal static class SafetyTests
         }
 
         b.WatchMovie("u1", m1, played: true, daysAgo: 30);
-        var env = await Env.StartAsync(b.World, new ClearrSettings { Mode = CleanupMode.Off });
+        var env = await Env.StartAsync(b.World, new ClearrSettings { ShowsMode = CleanupMode.Off, MoviesMode = CleanupMode.Off });
 
         // Off and DryRun: real cleanup refused through every entry point, nothing touched.
         foreach (var mode in new[] { CleanupMode.Off, CleanupMode.DryRun })
         {
             env.Mode(mode);
             var r = await env.Engine.CleanupAsync(false, true, default);
-            Expect(r.Error != null && r.Error.Contains(mode.ToString()) && env.World.Log.Count == 0 && env.History.GetAll().Count == 0, $"{mode}: real cleanup refused, nothing changed, nothing recorded");
+            Expect(r.ErrorMsg?.Code == "error.refusedBoth" && r.Error!.Contains(Messages.English(ClearrEngine.ModeName(mode))) && env.World.Log.Count == 0 && env.History.GetAll().Count == 0, $"{mode}: real cleanup refused, nothing changed, nothing recorded");
             var direct = await env.DirectEngine.CleanupAsync(false, true, default);
             Expect(direct.Error != null && env.Deleter.Deleted.Count == 0, $"{mode}: Jellyfin fallback refused too");
         }
@@ -80,8 +80,28 @@ internal static class SafetyTests
         var interrupted = await env.Engine.CleanupAsync(false, true, default);
         env.World.OnChange = null;
         var deleted = interrupted.Actions.Where(a => a.Action == "Deleted").ToList();
-        Expect(deleted.Count == 1 && interrupted.Actions.Count(a => a.Action == "Skipped" && a.Detail.Contains("changed to DryRun")) == 3, "Mode changed mid-run: the item in progress finishes, the other 3 are skipped");
+        Expect(deleted.Count == 1 && interrupted.Actions.Count(a => a.Action == "Skipped" && a.Detail.Contains("changed to Dry run")) == 3, "Mode changed mid-run: the item in progress finishes, the other 3 are skipped");
         Expect(env.World.EpisodeFiles.Any(f => f.SeriesId == s2.SonarrId) && env.World.EpisodeFiles.Any(f => f.SeriesId == s3.SonarrId) && env.World.RadarrMovies[m1.RadarrId!.Value]["movieFile"] != null, "Mode changed mid-run: the other shows and the movie are untouched");
+
+        // Shows and movies follow their own modes.
+        var bk = new WorldBuilder(seed: 5);
+        bk.User("u1", "Anna");
+        var ks1 = bk.Show("Kind Show", "Ended", new[] { 2 }, inSonarr: true, gbPerFile: 3);
+        var km1 = bk.Movie("Kind Movie", inRadarr: true, gb: 40);
+        bk.WatchAll("u1", ks1, 30);
+        bk.WatchMovie("u1", km1, true, 30);
+        var envk = await Env.StartAsync(bk.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.DryRun, MaxDeleteGbPerRun = 10 });
+        var onlyMovies = await envk.Engine.CleanupAsync(false, true, default, CleanupScope.Movies);
+        Expect(onlyMovies.ErrorMsg?.Code == "error.refusedMovies" && bk.World.Log.Count == 0, "Movies in Dry run: deleting movies only is refused, even though shows are in Delete");
+        var mixed = await envk.Engine.CleanupAsync(false, true, default);
+        var mixedMovie = mixed.Actions.Single(a => a.Kind == "Movie");
+        Expect(mixed.Actions.Single(a => a.Title == "Kind Show").Action == "Deleted" && !bk.World.EpisodeFiles.Any(f => f.SeriesId == ks1.SonarrId), "Mixed run: the show (Delete) is removed");
+        Expect(mixedMovie.Action == "WouldDelete" && bk.World.RadarrMovies[km1.RadarrId!.Value]["movieFile"] != null && !bk.World.Log.Any(l => l.Contains("movie", StringComparison.Ordinal)), "Mixed run: the movie (Dry run) is only listed, Radarr untouched");
+        Expect(mixed.TotalBytes == 6 * GB, "Mixed run: the total counts only what was really removed (the 40 GB movie preview doesn't use up the 10 GB limit)");
+        var schedShows = ClearrEngine.ScheduledDryRun(envk.Settings.Get().ShowsMode);
+        var schedMovies = ClearrEngine.ScheduledDryRun(envk.Settings.Get().MoviesMode);
+        Expect(schedShows == false && schedMovies == true, "Scheduled runs: shows delete, movies only preview");
+        await envk.StopAsync();
 
         // Unmonitor fails: nothing of that item is deleted, and the failure is recorded.
         var b2 = new WorldBuilder(seed: 2);
@@ -96,7 +116,7 @@ internal static class SafetyTests
         b2.World.FailMoviePut.Add(fm.RadarrId!.Value);
         var halfwayFiles = b2.World.EpisodeFiles.Where(f => f.SeriesId == f2.SonarrId).Select(f => f.Id).ToList();
         b2.World.FailEpisodeFileDelete.Add(halfwayFiles[1]);
-        var env2 = await Env.StartAsync(b2.World, new ClearrSettings { Mode = CleanupMode.Delete });
+        var env2 = await Env.StartAsync(b2.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.Delete });
         var r2 = await env2.Engine.CleanupAsync(false, true, default);
         var a1 = r2.Actions.Single(a => a.Title == "Fails To Unmonitor");
         Expect(a1.Action == "Failed" && b2.World.EpisodeFiles.Count(f => f.SeriesId == f1.SonarrId) == 2, "Unmonitor fails in Sonarr: no files deleted, recorded as Failed");
@@ -120,7 +140,7 @@ internal static class SafetyTests
         }
 
         b3.WatchMovie("u1", km, true, 30);
-        var env3 = await Env.StartAsync(b3.World, new ClearrSettings { Mode = CleanupMode.Delete });
+        var env3 = await Env.StartAsync(b3.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.Delete });
         env3.Keep.Set(k1.Id, true);
         env3.Keep.Set(k4.Seasons[1].Id, true);
         env3.Keep.Set(km.Id, true);
@@ -139,7 +159,7 @@ internal static class SafetyTests
         b4.WatchAll("u1", g1, 1);
         b4.WatchAll("u1", g2, 30);
         b4.Watch("u2", g2.Episodes.Take(1), 1);
-        var env4 = await Env.StartAsync(b4.World, new ClearrSettings { Mode = CleanupMode.Delete, GraceDays = 7 });
+        var env4 = await Env.StartAsync(b4.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.Delete, GraceDays = 7 });
         var r4 = await env4.Engine.CleanupAsync(false, true, default);
         Expect(b4.World.Log.Count == 0 && r4.Actions.Count == 0, "Grace period and an active viewer both block deletion (Cleo never started and doesn't matter)");
     }
@@ -149,7 +169,7 @@ internal static class SafetyTests
     private static async Task Randomized(Action<bool, string> expect, int worlds)
     {
         var violations = new List<string>();
-        int deletedItems = 0, realRuns = 0;
+        int deletedItems = 0, realRuns = 0, deletedMovies = 0, listedMovies = 0;
         for (var seed = 100; seed < 100 + worlds; seed++)
         {
             var rnd = new Random(seed);
@@ -164,7 +184,7 @@ internal static class SafetyTests
             }
 
             var movies = new List<WorldBuilder.MovieRef>();
-            for (var i = 0; i < rnd.Next(0, 4); i++)
+            for (var i = 0; i < rnd.Next(0, 5); i++)
             {
                 movies.Add(b.Movie("Movie" + i, inRadarr: rnd.Next(5) > 0, gb: rnd.Next(1, 9), jellyfinTags: rnd.Next(10) == 0 ? new[] { "keep" } : null));
             }
@@ -187,17 +207,19 @@ internal static class SafetyTests
                 {
                     if (rnd.Next(3) > 0)
                     {
-                        b.WatchMovie(u, m, played: rnd.Next(3) > 0, daysAgo: rnd.Next(0, 60));
+                        b.WatchMovie(u, m, played: rnd.Next(5) > 0, daysAgo: rnd.Next(0, 60));
                     }
                 }
             }
 
+            // Mode pairs (shows, movies), weighted towards mixed ones: they're where a kind mix-up would show.
+            var modes = new[] { (2, 2), (2, 1), (1, 2), (2, 0), (0, 2), (2, 1), (1, 2), (1, 1), (0, 0) }[rnd.Next(9)];
             var settings = new ClearrSettings
             {
-                Mode = rnd.Next(10) < 6 ? CleanupMode.Delete : (CleanupMode)rnd.Next(2),
+                ShowsMode = (CleanupMode)modes.Item1,
+                MoviesMode = (CleanupMode)modes.Item2,
                 DeleteSeasons = rnd.Next(4) > 0,
                 DeleteShows = rnd.Next(4) > 0,
-                DeleteMovies = rnd.Next(4) > 0,
                 RequireEndedForShowDelete = rnd.Next(4) > 0,
                 ProtectLatestSeasonOfContinuing = rnd.Next(4) > 0,
                 GraceDays = rnd.Next(0, 15),
@@ -208,6 +230,7 @@ internal static class SafetyTests
                 ExcludedUserIds = users.Where(_ => rnd.Next(5) == 0).ToList(),
             };
             var dryRun = rnd.Next(5) == 0;
+            var scope = rnd.Next(5) switch { 0 => CleanupScope.Shows, 1 => CleanupScope.Movies, _ => CleanupScope.All };
             var env = await Env.StartAsync(b.World, settings);
             var keptIds = new HashSet<string>();
             foreach (var id in shows.Select(s => s.Id).Concat(shows.SelectMany(s => s.Seasons.Select(x => x.Id))).Concat(movies.Select(m => m.Id)))
@@ -220,18 +243,25 @@ internal static class SafetyTests
             }
 
             var filesBefore = b.World.EpisodeFiles.ToList();
-            var result = await env.Engine.CleanupAsync(dryRun, true, default);
-            var tag = $"world {seed} ({settings.Mode}{(dryRun ? ", preview" : "")})";
+            var result = await env.Engine.CleanupAsync(dryRun, true, default, scope);
+            var tag = $"world {seed} (shows {settings.ShowsMode}, movies {settings.MoviesMode}, {scope}{(dryRun ? ", preview" : "")})";
             var log = b.World.Log;
-            var real = !dryRun && settings.Mode == CleanupMode.Delete;
+            var realShows = !dryRun && scope.HasFlag(CleanupScope.Shows) && settings.ShowsMode == CleanupMode.Delete;
+            var realMovies = !dryRun && scope.HasFlag(CleanupScope.Movies) && settings.MoviesMode == CleanupMode.Delete;
 
-            if (!real)
+            // Each kind may only be touched when its own mode is Delete and the run covers it.
+            if (!realShows && (log.Any(l => l.StartsWith("PUT series", StringComparison.Ordinal) || l.StartsWith("DELETE episodefile", StringComparison.Ordinal)) || b.World.EpisodeFiles.Count != filesBefore.Count))
             {
-                if (log.Count > 0 || b.World.EpisodeFiles.Count != filesBefore.Count)
-                {
-                    violations.Add($"{tag}: changed something without being allowed to");
-                }
+                violations.Add($"{tag}: changed shows without being allowed to");
+            }
 
+            if (!realMovies && log.Any(l => l.StartsWith("PUT movie", StringComparison.Ordinal) || l.StartsWith("DELETE moviefile", StringComparison.Ordinal)))
+            {
+                violations.Add($"{tag}: changed movies without being allowed to");
+            }
+
+            if (!realShows && !realMovies)
+            {
                 await env.StopAsync();
                 continue;
             }
@@ -254,7 +284,7 @@ internal static class SafetyTests
 
             foreach (var m in movies.Where(m => m.RadarrId != null && b.World.RadarrMovies[m.RadarrId.Value]["movieFile"] == null))
             {
-                if (!settings.DeleteMovies || !oracle.MovieAllowed(m))
+                if (!oracle.MovieAllowed(m))
                 {
                     violations.Add($"{tag}: deleted movie {m.Name} that the rules don't allow");
                 }
@@ -274,6 +304,8 @@ internal static class SafetyTests
             // Per-run size limit: more than one item only if they fit together.
             var done = result.Actions.Where(a => a.Action == "Deleted").ToList();
             deletedItems += done.Count;
+            deletedMovies += done.Count(a => a.Kind == "Movie");
+            listedMovies += result.Actions.Count(a => a.Kind == "Movie" && a.Action == "WouldDelete");
             if (settings.MaxDeleteGbPerRun > 0 && done.Count > 1 && done.Sum(a => a.Bytes) > settings.MaxDeleteGbPerRun * GB)
             {
                 violations.Add($"{tag}: deleted {done.Sum(a => a.Bytes) / GB} GB with a {settings.MaxDeleteGbPerRun} GB limit");
@@ -295,7 +327,7 @@ internal static class SafetyTests
         }
 
         expect(violations.Count == 0, $"Randomized: {worlds} random libraries, {realRuns} real cleanups, {deletedItems} items deleted, {violations.Count} rule violations");
-        expect(realRuns > 40 && deletedItems > 40, "Randomized: the random libraries actually exercise deletion");
+        expect(realRuns > 40 && deletedItems > 40 && deletedMovies > 5 && listedMovies > 5, $"Randomized: the random libraries actually exercise deletion ({deletedMovies} movies removed, {listedMovies} movies only listed in mixed runs)");
     }
 
     /// <summary>The cleanup rules written out again from the README, independent of Analyzer.</summary>
@@ -440,7 +472,7 @@ internal static class SafetyTests
         public void Mode(CleanupMode m)
         {
             var s = Settings.Get();
-            s.Mode = m;
+            s.SetModes(m);
             Settings.Save(s);
         }
 

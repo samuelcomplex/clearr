@@ -4,13 +4,18 @@ using Clearr.Storage;
 
 namespace Clearr.Api;
 
-/// <summary>Runs the cleanup once a day at the configured local time (container TZ).</summary>
+/// <summary>
+/// Runs the daily cleanups at their configured local times (container TZ):
+/// one for shows and one for movies, each in its own mode.
+/// </summary>
 public class Scheduler : BackgroundService
 {
+    private static readonly string[] TimeFormats = { @"hh\:mm", @"h\:mm" };
+    private static readonly CleanupScope[] Kinds = { CleanupScope.Shows, CleanupScope.Movies };
     private readonly ClearrEngine _clearr;
     private readonly SettingsStore _settings;
     private readonly ILogger<Scheduler> _log;
-    private DateOnly _lastRun;
+    private readonly Dictionary<CleanupScope, DateOnly> _lastRun = new();
 
     public Scheduler(ClearrEngine clearr, SettingsStore settings, ILogger<Scheduler> log)
     {
@@ -18,20 +23,31 @@ public class Scheduler : BackgroundService
         _settings = settings;
         _log = log;
 
-        // Started after today's run time: first run is tomorrow (no surprise cleanup on startup).
+        // Started after today's run time: that kind's first run is tomorrow (no surprise cleanup on startup).
+        var s = settings.Get();
         var today = DateOnly.FromDateTime(DateTime.Now);
-        _lastRun = DateTime.Now.TimeOfDay >= ParseTime(settings.Get().ScheduleTime) ? today : today.AddDays(-1);
+        foreach (var kind in Kinds)
+        {
+            _lastRun[kind] = DateTime.Now.TimeOfDay >= ParseTime(TimeFor(s, kind)) ? today : today.AddDays(-1);
+        }
     }
 
     public DateTime? LastRunAt { get; private set; }
 
-    public string? LastRunSummary { get; private set; }
+    public Msg? LastRunSummary { get; private set; }
 
-    public DateTime NextRun(ClearrSettings s)
+    public static string TimeFor(ClearrSettings s, CleanupScope kind) => kind == CleanupScope.Movies ? s.MoviesScheduleTime : s.ShowsScheduleTime;
+
+    /// <summary>When this kind runs next, or null when its mode is Off.</summary>
+    public DateTime? NextRun(ClearrSettings s, CleanupScope kind)
     {
-        var t = ParseTime(s.ScheduleTime);
-        var today = DateTime.Today.Add(t);
-        return DateTime.Now < today && _lastRun < DateOnly.FromDateTime(DateTime.Now) ? today : today.AddDays(1);
+        if (s.ModeFor(kind) == CleanupMode.Off)
+        {
+            return null;
+        }
+
+        var today = DateTime.Today.Add(ParseTime(TimeFor(s, kind)));
+        return DateTime.Now < today && _lastRun[kind] < DateOnly.FromDateTime(DateTime.Now) ? today : today.AddDays(1);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,36 +57,57 @@ public class Scheduler : BackgroundService
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-                var s = _settings.Get();
-                var now = DateTime.Now;
-                if (DateOnly.FromDateTime(now) > _lastRun && now.TimeOfDay >= ParseTime(s.ScheduleTime))
+                foreach (var kind in Kinds)
                 {
-                    _lastRun = DateOnly.FromDateTime(now);
-                    if (ClearrEngine.ScheduledDryRun(s.Mode) is not bool dry || !s.Jellyfin.IsConfigured)
-                    {
-                        continue;
-                    }
-
-                    _log.LogInformation("Scheduled cleanup ({Mode})", s.Mode);
-                    var r = await _clearr.CleanupAsync(dryRun: dry, record: true, stoppingToken);
-                    LastRunAt = DateTime.UtcNow;
-                    LastRunSummary = $"{(r.DryRun ? "Dry run" : "Cleanup")}: {r.Actions.Count(a => a.Action is "Deleted" or "WouldDelete")} item(s), {r.TotalBytes / 1073741824.0:0.0} GB";
+                    await RunIfDueAsync(kind, stoppingToken);
                 }
             }
             catch (OperationCanceledException)
             {
                 return;
             }
-            catch (Exception ex)
-            {
-                LastRunAt = DateTime.UtcNow;
-                LastRunSummary = "Failed: " + ex.Message;
-                _log.LogError(ex, "Scheduled cleanup failed");
-            }
         }
     }
 
-    private static readonly string[] TimeFormats = { @"hh\:mm", @"h\:mm" };
+    private async Task RunIfDueAsync(CleanupScope kind, CancellationToken stop)
+    {
+        var s = _settings.Get();
+        var now = DateTime.Now;
+        if (DateOnly.FromDateTime(now) <= _lastRun[kind] || now.TimeOfDay < ParseTime(TimeFor(s, kind)))
+        {
+            return;
+        }
+
+        _lastRun[kind] = DateOnly.FromDateTime(now);
+        var mode = s.ModeFor(kind);
+        if (ClearrEngine.ScheduledDryRun(mode) is not bool dry || !s.Jellyfin.IsConfigured)
+        {
+            return;
+        }
+
+        var name = kind == CleanupScope.Movies ? "Movies" : "Shows";
+        try
+        {
+            _log.LogInformation("Scheduled {Kind} cleanup ({Mode})", name, mode);
+            var r = await _clearr.CleanupAsync(dryRun: dry, record: true, stop, kind);
+            LastRunAt = DateTime.UtcNow;
+            LastRunSummary = new Msg($"run.{name.ToLowerInvariant()}{(r.DryRun ? "Dry" : "Cleanup")}", new()
+            {
+                ["items"] = r.Actions.Count(a => a.Action is "Deleted" or "WouldDelete"),
+                ["gb"] = Math.Round(r.TotalBytes / 1073741824.0, 1),
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            LastRunAt = DateTime.UtcNow;
+            LastRunSummary = new Msg($"run.{name.ToLowerInvariant()}Failed", new() { ["error"] = ex.Message });
+            _log.LogError(ex, "Scheduled {Kind} cleanup failed", name);
+        }
+    }
 
     private static TimeSpan ParseTime(string? hhmm) =>
         TimeSpan.TryParseExact(hhmm ?? "", TimeFormats, CultureInfo.InvariantCulture, out var t) ? t : TimeSpan.FromHours(4);

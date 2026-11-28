@@ -193,17 +193,31 @@ public sealed class ClearrEngine : IDisposable
 
     // ---------------------------------------------------------------- cleanup
 
-    private sealed record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, string Reason, int? ArrId, ShowInfo? Show, RadarrMovie? Movie, DirectTarget? Direct);
+    private sealed record Work(string Kind, string Title, string? SeasonName, int? SeasonNumber, Msg Reason, int? ArrId, ShowInfo? Show, RadarrMovie? Movie, DirectTarget? Direct);
 
-    public async Task<CleanupResult> CleanupAsync(bool dryRun, bool record, CancellationToken ct)
+    private static CleanupScope KindOf(Work w) => w.Kind == "Movie" ? CleanupScope.Movies : CleanupScope.Shows;
+
+    /// <summary>
+    /// Previews (dryRun) or carries out a cleanup of shows, movies or both.
+    /// In a real run each kind follows its own mode: Delete is removed, Dry run is only listed, Off is left out.
+    /// </summary>
+    public async Task<CleanupResult> CleanupAsync(bool dryRun, bool record, CancellationToken ct, CleanupScope scope = CleanupScope.All)
     {
         await _gate.WaitAsync(ct);
         try
         {
             var s = _settings();
-            if (!dryRun && s.Mode != CleanupMode.Delete)
+            bool InScope(CleanupScope k) => (scope & k) != 0 && (dryRun || s.ModeFor(k) != CleanupMode.Off);
+            bool Acts(CleanupScope k) => !dryRun && (scope & k) != 0 && s.ModeFor(k) == CleanupMode.Delete;
+            if (!dryRun && !Acts(CleanupScope.Shows) && !Acts(CleanupScope.Movies))
             {
-                return new CleanupResult { DryRun = true, Error = $"Nothing was deleted: cleanup mode is {s.Mode}. Set it to Delete in Settings first." };
+                var refused = scope switch
+                {
+                    CleanupScope.Shows => new Msg("error.refusedShows", new() { ["mode"] = ModeName(s.ShowsMode) }),
+                    CleanupScope.Movies => new Msg("error.refusedMovies", new() { ["mode"] = ModeName(s.MoviesMode) }),
+                    _ => new Msg("error.refusedBoth", new() { ["shows"] = ModeName(s.ShowsMode), ["movies"] = ModeName(s.MoviesMode) }),
+                };
+                return new CleanupResult { DryRun = true, Error = refused.ToString(), ErrorMsg = refused };
             }
 
             var (lib, report, _, radarrIndex) = await BuildAsync(ct);
@@ -212,7 +226,7 @@ public sealed class ClearrEngine : IDisposable
             var showsById = lib.Shows.ToDictionary(x => x.Id);
             var radarrById = radarrIndex.Values.GroupBy(v => v.Item.Id).ToDictionary(g => g.Key, g => g.First());
 
-            foreach (var sr in report.Shows)
+            foreach (var sr in InScope(CleanupScope.Shows) ? report.Shows : new List<ShowReport>())
             {
                 var show = showsById[sr.ShowId];
                 var viaSonarr = sr.Via == "Sonarr";
@@ -223,16 +237,16 @@ public sealed class ClearrEngine : IDisposable
 
                 if (s.DeleteShows && sr.Eligible)
                 {
-                    work.Add(new Work("Show", sr.Name, null, null, sr.Reason, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Show", sr.ShowId, null, null)));
+                    work.Add(new Work("Show", sr.Name, null, null, sr.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Show", sr.ShowId, null, null)));
                 }
                 else if (s.DeleteSeasons)
                 {
                     work.AddRange(sr.Seasons.Where(x => x.Eligible && x.Number.HasValue)
-                        .Select(x => new Work("Season", sr.Name, x.Name, x.Number, x.Reason, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Season", sr.ShowId, x.SeasonId, x.Number))));
+                        .Select(x => new Work("Season", sr.Name, x.Name, x.Number, x.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Season", sr.ShowId, x.SeasonId, x.Number))));
                 }
             }
 
-            if (s.DeleteMovies)
+            if (InScope(CleanupScope.Movies))
             {
                 foreach (var mr in report.Movies.Where(m => m.Eligible && m.Via != null))
                 {
@@ -240,11 +254,11 @@ public sealed class ClearrEngine : IDisposable
                     if (mr.Via == "Radarr")
                     {
                         var rm = mr.ArrId is int rid ? radarrById.GetValueOrDefault(rid) : null;
-                        work.Add(new Work("Movie", title, null, null, mr.Reason, mr.ArrId, null, rm, null));
+                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, mr.ArrId, null, rm, null));
                     }
                     else
                     {
-                        work.Add(new Work("Movie", title, null, null, mr.Reason, null, null, null, new DirectTarget("Movie", mr.MovieId, null, null)));
+                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, null, null, null, new DirectTarget("Movie", mr.MovieId, null, null)));
                     }
                 }
             }
@@ -276,23 +290,25 @@ public sealed class ClearrEngine : IDisposable
 
             long planned = 0;
             var deletedAny = false;
-            string? stopped = null;
+            var stopped = new Dictionary<CleanupScope, Msg>();
 
             foreach (var w in work)
             {
                 ct.ThrowIfCancellationRequested();
-                var entry = new HistoryEntry { Date = DateTime.UtcNow, Kind = w.Kind, Title = w.Title, SeasonName = w.SeasonName, Detail = w.Reason };
+                var entry = new HistoryEntry { Date = DateTime.UtcNow, Kind = w.Kind, Title = w.Title, SeasonName = w.SeasonName, Parts = { w.Reason } };
+                var kind = KindOf(w);
+                var act = Acts(kind);
 
-                // Safety: re-read the mode before every real deletion, so switching away from Delete stops a run that's in progress.
-                if (!dryRun && stopped == null && _settings().Mode is var current && current != CleanupMode.Delete)
+                // Safety: re-read this kind's mode before every real deletion, so switching away from Delete stops a run that's in progress.
+                if (act && !stopped.ContainsKey(kind) && _settings().ModeFor(kind) is var current && current != CleanupMode.Delete)
                 {
-                    stopped = $"Stopped: cleanup mode was changed to {current} during the run";
-                    _log.LogWarning("Cleanup stopped: mode changed to {Mode}", current);
+                    stopped[kind] = new Msg(kind == CleanupScope.Movies ? "outcome.stoppedMovies" : "outcome.stoppedShows", new() { ["mode"] = ModeName(current) });
+                    _log.LogWarning("Cleanup of {Kind} stopped: mode changed to {Mode}", kind, current);
                 }
 
-                if (stopped != null)
+                if (act && stopped.TryGetValue(kind, out var why))
                 {
-                    Skip(entry, stopped);
+                    Skip(entry, why);
                     result.Actions.Add(entry);
                     continue;
                 }
@@ -309,7 +325,7 @@ public sealed class ClearrEngine : IDisposable
                     {
                         if (w.Movie?.FileId is null)
                         {
-                            Skip(entry, "No file in Radarr");
+                            Skip(entry, new Msg("outcome.noFileRadarr"));
                             result.Actions.Add(entry);
                             continue;
                         }
@@ -322,7 +338,7 @@ public sealed class ClearrEngine : IDisposable
                         files = w.SeasonNumber is int n ? all.Where(f => f.SeasonNumber == n).ToList() : all;
                         if (files.Count == 0)
                         {
-                            Skip(entry, "No files in Sonarr");
+                            Skip(entry, new Msg("outcome.noFilesSonarr"));
                             result.Actions.Add(entry);
                             continue;
                         }
@@ -339,24 +355,31 @@ public sealed class ClearrEngine : IDisposable
                         entry.Bytes = files.Sum(f => f.Size);
                     }
 
-                    if (planned > 0 && planned + entry.Bytes > cap)
+                    // The size limit covers what this run removes (or, in a preview, would remove).
+                    if (dryRun || act)
                     {
-                        Skip(entry, $"Per-run limit of {s.MaxDeleteGbPerRun} GB reached; will be handled on a later run");
-                        result.Actions.Add(entry);
-                        continue;
+                        if (planned > 0 && planned + entry.Bytes > cap)
+                        {
+                            Skip(entry, new Msg("outcome.limit", new() { ["gb"] = s.MaxDeleteGbPerRun }));
+                            result.Actions.Add(entry);
+                            continue;
+                        }
+
+                        planned += entry.Bytes;
                     }
 
-                    planned += entry.Bytes;
-
-                    if (dryRun)
+                    if (!act)
                     {
                         entry.Action = "WouldDelete";
                         if (w.Direct != null)
                         {
-                            entry.Detail += " · would be removed through Jellyfin (not managed by Sonarr/Radarr)";
+                            entry.Parts.Add(new Msg("outcome.viaJellyfin"));
                         }
 
-                        result.TotalBytes += entry.Bytes;
+                        if (dryRun)
+                        {
+                            result.TotalBytes += entry.Bytes; // in a real run, the total is what was actually removed
+                        }
                         result.Actions.Add(entry);
                         continue;
                     }
@@ -364,14 +387,14 @@ public sealed class ClearrEngine : IDisposable
                     // ---- act
                     if (w.Direct != null)
                     {
-                        entry.Detail += " · " + _direct!.Delete(w.Direct);
+                        entry.Parts.Add(Msg.Text(_direct!.Delete(w.Direct)));
                     }
                     else if (w.Kind == "Movie")
                     {
                         // Unmonitor first; if that fails nothing is deleted.
                         await radarr!.UnmonitorAsync(w.ArrId!.Value, ct);
                         await radarr.DeleteMovieFileAsync(w.Movie!.FileId!.Value, ct);
-                        entry.Detail += " · unmonitored and file deleted in Radarr";
+                        entry.Parts.Add(new Msg("outcome.movieDeleted"));
                     }
                     else
                     {
@@ -390,9 +413,7 @@ public sealed class ClearrEngine : IDisposable
                             throw new ApiException($"{ex.Message} (after deleting {done} of {files.Count} files)");
                         }
 
-                        entry.Detail += w.SeasonNumber is null
-                            ? $" · {files.Count} files deleted in Sonarr; existing seasons unmonitored, show still monitored for new seasons"
-                            : $" · {files.Count} files deleted in Sonarr; season unmonitored";
+                        entry.Parts.Add(new Msg(w.SeasonNumber is null ? "outcome.showDeleted" : "outcome.seasonDeleted", new() { ["files"] = files.Count }));
                     }
 
                     entry.Action = "Deleted";
@@ -403,7 +424,7 @@ public sealed class ClearrEngine : IDisposable
                 catch (Exception ex) when (ex is ApiException or ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException)
                 {
                     entry.Action = "Failed";
-                    entry.Detail = ex.Message;
+                    entry.Parts = new() { Msg.Text(ex.Message) };
                     _log.LogError("Clearr failed {Kind} {Title} {Season}: {Message}", w.Kind, w.Title, w.SeasonName, ex.Message);
                 }
 
@@ -423,6 +444,11 @@ public sealed class ClearrEngine : IDisposable
                 {
                     _log.LogWarning("Jellyfin refresh failed: {Message}", ex.Message);
                 }
+            }
+
+            foreach (var a in result.Actions)
+            {
+                a.Detail = Messages.English(a.Parts);
             }
 
             if (record && result.Actions.Count > 0)
@@ -459,21 +485,23 @@ public sealed class ClearrEngine : IDisposable
         _ => null,
     };
 
-    private static void Skip(HistoryEntry e, string why)
+    public static Msg ModeName(CleanupMode m) => new("modeName." + m);
+
+    private static void Skip(HistoryEntry e, Msg why)
     {
         e.Action = "Skipped";
-        e.Detail = why;
+        e.Parts = new() { why };
     }
 
     /// <summary>Returns a reason if Sonarr has more files in a season than Jellyfin knows episodes.</summary>
-    public static string? UnseenFiles(ShowInfo show, List<EpisodeFile> files)
+    public static Msg? UnseenFiles(ShowInfo show, List<EpisodeFile> files)
     {
         foreach (var g in files.GroupBy(f => f.SeasonNumber))
         {
             var known = show.Seasons.Where(x => x.Number == g.Key).Sum(x => x.Episodes.Count);
             if (g.Count() > known)
             {
-                return $"Sonarr has {g.Count()} files in season {g.Key} but Jellyfin only lists {known} episodes; waiting for Jellyfin to catch up";
+                return new Msg("outcome.unseen", new() { ["files"] = g.Count(), ["season"] = g.Key, ["known"] = known });
             }
         }
 
@@ -522,6 +550,7 @@ public static class ClearrUi
         ".js" => "text/javascript; charset=utf-8",
         ".css" => "text/css; charset=utf-8",
         ".svg" => "image/svg+xml",
+        ".json" => "application/json; charset=utf-8",
         _ => "application/octet-stream",
     };
 }

@@ -7,6 +7,26 @@ public enum CleanupMode
     Delete = 2
 }
 
+/// <summary>What a cleanup covers: shows (seasons and whole shows), movies, or both.</summary>
+[Flags]
+public enum CleanupScope
+{
+    Shows = 1,
+    Movies = 2,
+    All = Shows | Movies
+}
+
+public static class CleanupScopes
+{
+    /// <summary>"shows", "movies", or anything else (including nothing) for both.</summary>
+    public static CleanupScope Parse(string? s) => (s ?? "").Trim().ToLowerInvariant() switch
+    {
+        "shows" => CleanupScope.Shows,
+        "movies" => CleanupScope.Movies,
+        _ => CleanupScope.All,
+    };
+}
+
 public class ConnectionSettings
 {
     public string Url { get; set; } = "";
@@ -34,7 +54,7 @@ public class HttpsSettings
 public class ClearrSettings
 {
     /// <summary>Bump when the settings format changes, and add a step to <see cref="Storage.SettingsMigrations"/>.</summary>
-    public const int CurrentSchema = 1;
+    public const int CurrentSchema = 2;
 
     /// <summary>Format version of the saved file (0 = written before versioning existed).</summary>
     public int SchemaVersion { get; set; } = CurrentSchema;
@@ -45,19 +65,29 @@ public class ClearrSettings
     public ConnectionSettings Radarr { get; set; } = new();
 
     // ---- Cleanup ----
-    public CleanupMode Mode { get; set; } = CleanupMode.DryRun;
+    /// <summary>Shows (seasons and whole shows): Off, Dry run or Delete.</summary>
+    public CleanupMode ShowsMode { get; set; } = CleanupMode.DryRun;
+
+    /// <summary>Movies: Off, Dry run or Delete.</summary>
+    public CleanupMode MoviesMode { get; set; } = CleanupMode.DryRun;
+
     public bool DeleteSeasons { get; set; } = true;
     public bool DeleteShows { get; set; } = true;
-    public bool DeleteMovies { get; set; } = true;
     public bool RequireEndedForShowDelete { get; set; } = true;
     public bool ProtectLatestSeasonOfContinuing { get; set; } = true;
     public bool IncludeSpecials { get; set; }
     public int GraceDays { get; set; } = 7;
     public int MaxDeleteGbPerRun { get; set; } = 50;
     public string KeepTag { get; set; } = "keep";
-    /// <summary>Local time of day for the daily run, "HH:mm".</summary>
-    public string ScheduleTime { get; set; } = "04:00";
+    /// <summary>App only: local time of day for the daily shows run, "HH:mm".</summary>
+    public string ShowsScheduleTime { get; set; } = "04:00";
+
+    /// <summary>App only: local time of day for the daily movies run, "HH:mm".</summary>
+    public string MoviesScheduleTime { get; set; } = "04:30";
     public bool RefreshJellyfinAfterCleanup { get; set; } = true;
+
+    /// <summary>UI language: "" follows the browser, otherwise a code such as "en" or "sv".</summary>
+    public string Language { get; set; } = "";
 
     /// <summary>App only: also write Debug-level detail (every decision) to the log files.</summary>
     public bool DebugLogging { get; set; }
@@ -82,4 +112,13 @@ public class ClearrSettings
     // ---- Security ----
     /// <summary>PBKDF2 hash of the UI password; empty = no password.</summary>
     public string PasswordHash { get; set; } = "";
+
+    public CleanupMode ModeFor(CleanupScope kind) => kind == CleanupScope.Movies ? MoviesMode : ShowsMode;
+
+    /// <summary>Sets the same mode for shows and movies.</summary>
+    public void SetModes(CleanupMode mode)
+    {
+        ShowsMode = mode;
+        MoviesMode = mode;
+    }
 }

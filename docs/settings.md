@@ -15,21 +15,39 @@ URLs can be written with or without `http://` and with or without a trailing sla
 
 ## Cleanup
 
+Shows and movies are cleaned up separately: each has its own **mode** and, in the app, its own **daily run time**. So you can, for example, let finished shows go every night while movies stay in Dry run, or run movies only once you trust the results.
+
+### Shows
+
 | Setting | Default | |
 |---|---|---|
-| **Cleanup mode** | Dry run | **Off**: only track and flag. **Dry run**: the daily run records what it *would* remove. **Delete**: remove files. Nothing is ever removed in any mode except Delete, and the mode is checked again before every single item. |
-| **Daily run at** | 04:00 | App only, in the container's `TZ`. The plugin's run is a Jellyfin scheduled task (*Dashboard → Scheduled Tasks → Clearr*). |
-| **Max GB removed per run** | 50 | Anything over the limit waits for the next run. 0 = no limit. The first item of a run is always allowed, even if it's bigger than the limit on its own. |
-| **Grace period** | 7 days | Time between the last viewer finishing and the removal. |
+| **Cleanup mode** | Dry run | **Off**: only track and flag. **Dry run**: the daily run records what it *would* remove. **Delete**: remove files. Applies to the shows' daily run and to *Delete eligible now* on the Shows page. |
+| **Daily run at** | 04:00 | App only, in the container's `TZ`. |
 | **Remove finished seasons** | On | |
 | **Remove whole shows when finished** | On | Unmonitors every existing season, deletes all files, and leaves the show itself monitored so new seasons still arrive. |
 | **Only remove whole shows that have Ended** | On | Shows that are still running only lose finished seasons. |
 | **Never remove the newest season of a continuing show** | On | Protects a season that's still airing. |
-| **Remove finished movies** | On | |
 | **Count specials (season 0)** | Off | When off, specials are ignored when deciding whether a show is finished. |
+
+### Movies
+
+| Setting | Default | |
+|---|---|---|
+| **Cleanup mode** | Dry run | Off, Dry run or Delete, as for shows. Applies to the movies' daily run and to *Delete eligible now* on the Movies page. |
+| **Daily run at** | 04:30 | App only, in the container's `TZ`. |
+
+Nothing is ever removed unless that kind's mode is **Delete**, and the mode is checked again before every single item.
+
+**In the plugin**, the daily runs are two Jellyfin scheduled tasks, **Clear finished shows** and **Clear finished movies** (*Dashboard → Scheduled Tasks → Clearr*). Each has its own schedule there: daily, weekly, every few hours, or none at all.
+
+### Shows and movies
+
+| Setting | Default | |
+|---|---|---|
+| **Max GB removed per run** | 50 | Anything over the limit waits for the next run. 0 = no limit. The first item of a run is always allowed, even if it's bigger than the limit on its own. Only what a run actually removes counts towards it. |
+| **Grace period** | 7 days | Time between the last viewer finishing and the removal. |
 | **Refresh the Jellyfin library after a cleanup** | On | So removed items disappear from Jellyfin straight away. |
 | **Keep tag** | `keep` | Items with this tag in Jellyfin, Sonarr or Radarr are never removed. Case doesn't matter. |
-| **Debug logging** | Off | App only. Writes every decision to the log files. Turn it on while tracking down a problem. |
 
 ## Flags
 
@@ -42,6 +60,13 @@ URLs can be written with or without `http://` and with or without a trailing sla
 ## Users
 
 Tick **Ignore** for accounts that shouldn't count, such as a shared living-room account or a guest. Ignored users never hold anything back, and their watching doesn't make anything eligible either.
+
+## General
+
+| Setting | Default | |
+|---|---|---|
+| **Language** | Automatic | The language of Clearr's pages: **English** or **Svenska**. *Automatic* follows your browser, falling back to English. Messages passed on from Sonarr, Radarr or Jellyfin (such as a connection error) stay in their own language. |
+| **Debug logging** | Off | App only. Writes every decision to the log files. Turn it on while tracking down a problem. |
 
 ## Security (app)
 

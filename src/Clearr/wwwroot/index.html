@@ -13,8 +13,8 @@
     <form id="loginForm" class="login-box">
         <img src="ui/logo.svg" alt="" class="login-logo">
         <h1>Clearr</h1>
-        <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" autofocus>
-        <button type="submit">Sign in</button>
+        <input type="password" id="loginPassword" data-i18n-placeholder="shell.password" placeholder="Password" autocomplete="current-password" autofocus>
+        <button type="submit" data-i18n="shell.signIn">Sign in</button>
         <div id="loginError" class="error-text"></div>
     </form>
 </div>
@@ -22,18 +22,18 @@
 <div id="app" class="app hidden">
     <nav class="sidebar">
         <div class="brand"><img src="ui/logo.svg" alt=""><span>Clearr</span></div>
-        <a href="#shows" data-page="shows" class="nav-link">Shows</a>
-        <a href="#movies" data-page="movies" class="nav-link">Movies</a>
-        <a href="#history" data-page="history" class="nav-link">History</a>
-        <a href="#settings" data-page="settings" class="nav-link">Settings</a>
-        <a href="#logs" data-page="logs" class="nav-link">Logs</a>
+        <a href="#shows" data-page="shows" class="nav-link" data-i18n="nav.shows">Shows</a>
+        <a href="#movies" data-page="movies" class="nav-link" data-i18n="nav.movies">Movies</a>
+        <a href="#history" data-page="history" class="nav-link" data-i18n="nav.history">History</a>
+        <a href="#settings" data-page="settings" class="nav-link" data-i18n="nav.settings">Settings</a>
+        <a href="#logs" data-page="logs" class="nav-link" data-i18n="nav.logs">Logs</a>
         <div class="sidebar-foot">
-            <div id="statusMode" class="mode-badge"></div>
+            <div id="statusModes"></div>
             <div id="statusNext" class="muted small"></div>
             <div id="statusLast" class="muted small"></div>
             <div class="muted small">v<span id="version"></span></div>
-            <a id="sponsor" class="sponsor hidden" target="_blank" rel="noopener">♥ Sponsor</a>
-            <a href="#" id="logout" class="muted small hidden">Sign out</a>
+            <a id="sponsor" class="sponsor hidden" target="_blank" rel="noopener" data-i18n="shell.sponsor">♥ Sponsor</a>
+            <a href="#" id="logout" class="muted small hidden" data-i18n="shell.signOut">Sign out</a>
         </div>
     </nav>
     <main class="content" id="root"></main>

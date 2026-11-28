@@ -18,7 +18,7 @@ Every item shows its reason in **Shows**/**Movies**, and every skip is in **Hist
 | **Not in Sonarr / Not in Radarr** | Clearr only removes what Sonarr/Radarr manage. | Add it to Sonarr/Radarr, or (plugin only) turn on removal through Jellyfin. |
 | **Sonarr has 11 files in season 2 but Jellyfin only lists 10 episodes** | Something new downloaded and Jellyfin hasn't scanned it yet. | Nothing. It goes through once Jellyfin has scanned it. |
 | **Per-run limit of 50 GB reached** | The rest waits for the next run. | Raise **Max GB removed per run** if you like. |
-| **Stopped: cleanup mode was changed during the run** | You switched away from Delete while it was running. | That's the safety stop working as intended. |
+| **Stopped: the cleanup mode for shows (or movies) was changed during the run** | You switched away from Delete while it was running. | That's the safety stop working as intended. |
 
 ## The page says "Clearr only accepts connections from your local network"
 

@@ -100,6 +100,22 @@ public static class SettingsMigrations
     {
         // 0 -> 1: versioning introduced; the format itself didn't change.
         [1] = _ => { },
+
+        // 1 -> 2: one cleanup mode and schedule became separate ones for shows and movies.
+        // "Remove finished movies" off meant movies were never cleared: that's now the movies mode Off.
+        [2] = json =>
+        {
+            var mode = json["mode"]?.GetValue<string>() ?? nameof(CleanupMode.DryRun);
+            var movies = json["deleteMovies"]?.GetValue<bool>() ?? true;
+            var time = json["scheduleTime"]?.GetValue<string>() ?? "04:00";
+            json["showsMode"] = mode;
+            json["moviesMode"] = movies ? mode : nameof(CleanupMode.Off);
+            json["showsScheduleTime"] = time;
+            json["moviesScheduleTime"] = time;
+            json.Remove("mode");
+            json.Remove("deleteMovies");
+            json.Remove("scheduleTime");
+        },
     };
 
     public static void Upgrade(System.Text.Json.Nodes.JsonObject json, int from)
@@ -126,7 +142,7 @@ public class SettingsStore
     }
 
     /// <summary>Something worth telling the user about the last load (an upgrade, a broken file).</summary>
-    public string? Notice { get; private set; }
+    public Msg? Notice { get; private set; }
 
     public ClearrSettings Get()
     {
@@ -166,7 +182,7 @@ public class SettingsStore
             var broken = _paths.File($"settings.broken-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json");
             System.IO.File.Move(_path, broken);
             SecureFile.Restrict(broken);
-            Notice = $"settings.json couldn't be read ({ex.Message}); it was moved to {Path.GetFileName(broken)} and Clearr started with default settings (Dry run).";
+            Notice = new Msg("notice.broken", new() { ["error"] = ex.Message, ["file"] = Path.GetFileName(broken) });
             return new ClearrSettings();
         }
 
@@ -182,7 +198,7 @@ public class SettingsStore
             SettingsMigrations.Upgrade(json, version);
             var upgraded = json.Deserialize<ClearrSettings>(Json.Options) ?? new();
             AtomicFile.Write(_path, JsonSerializer.Serialize(upgraded, Json.Options));
-            Notice = $"Settings upgraded from format {version} to {ClearrSettings.CurrentSchema}; the old file is kept as {Path.GetFileName(backup)}.";
+            Notice = new Msg("notice.upgraded", new() { ["from"] = version, ["to"] = ClearrSettings.CurrentSchema, ["file"] = Path.GetFileName(backup) });
             return upgraded;
         }
 
@@ -195,7 +211,7 @@ public class SettingsStore
                 SecureFile.WriteAllText(backup, text);
             }
 
-            Notice = $"These settings were saved by a newer Clearr (format {version}); a copy is kept as {Path.GetFileName(backup)}.";
+            Notice = new Msg("notice.newer", new() { ["version"] = version, ["file"] = Path.GetFileName(backup) });
         }
 
         return json.Deserialize<ClearrSettings>(Json.Options) ?? new();

@@ -111,6 +111,9 @@ public class SeasonReport
     public List<UserProgress> Users { get; set; } = new();
     public bool Eligible { get; set; }
     public string Reason { get; set; } = "";
+
+    /// <summary>The reason as a translatable message (Reason is its English text).</summary>
+    public Msg? ReasonMsg { get; set; }
 }
 
 public class ShowReport
@@ -130,6 +133,9 @@ public class ShowReport
     public List<SeasonReport> Seasons { get; set; } = new();
     public bool Eligible { get; set; }
     public string Reason { get; set; } = "";
+
+    /// <summary>The reason as a translatable message (Reason is its English text).</summary>
+    public Msg? ReasonMsg { get; set; }
 }
 
 public class MovieReport
@@ -146,6 +152,9 @@ public class MovieReport
     public List<UserProgress> Users { get; set; } = new();
     public bool Eligible { get; set; }
     public string Reason { get; set; } = "";
+
+    /// <summary>The reason as a translatable message (Reason is its English text).</summary>
+    public Msg? ReasonMsg { get; set; }
 }
 
 public class WatchReport
@@ -173,6 +182,9 @@ public class HistoryEntry
     public string Title { get; set; } = "";
     public string? SeasonName { get; set; }
     public string Detail { get; set; } = "";
+
+    /// <summary>The detail as translatable parts, joined with " · " (Detail is their English text). Empty in entries from before 0.2.</summary>
+    public List<Msg> Parts { get; set; } = new();
     public long Bytes { get; set; }
 }
 
@@ -181,5 +193,8 @@ public class CleanupResult
     public bool DryRun { get; set; }
     public long TotalBytes { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>The error as a translatable message, when Clearr itself refused (Error is its English text).</summary>
+    public Msg? ErrorMsg { get; set; }
     public List<HistoryEntry> Actions { get; set; } = new();
 }
