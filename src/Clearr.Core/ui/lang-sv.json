@@ -10,7 +10,6 @@
   "shell.signIn": "Logga in",
   "shell.password": "Lösenord",
   "shell.signOut": "Logga ut",
-  "shell.sponsor": "♥ Sponsra",
   "shell.nextRun": "{kind}: nästa körning {when}",
   "shell.runOff": "{kind}: daglig körning av",
   "shell.last": "Senast: {summary}",

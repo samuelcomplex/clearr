@@ -10,7 +10,6 @@
   "shell.signIn": "Sign in",
   "shell.password": "Password",
   "shell.signOut": "Sign out",
-  "shell.sponsor": "♥ Sponsor",
   "shell.nextRun": "{kind}: next run {when}",
   "shell.runOff": "{kind}: daily run off",
   "shell.last": "Last: {summary}",

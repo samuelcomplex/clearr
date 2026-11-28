@@ -65,9 +65,4 @@
         window.addEventListener('hashchange', route);
         route();
     });
-
-    // Optional support link: set "githubSponsors" (a GitHub username) in support.json to show it.
-    fetch('support.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
-        if (j && j.githubSponsors) { var a = $('#sponsor'); a.href = 'https://github.com/sponsors/' + encodeURIComponent(j.githubSponsors); a.classList.remove('hidden'); }
-    }).catch(function () {});
 })();
