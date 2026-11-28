@@ -36,6 +36,7 @@ The first public release.
 - Settings carry a format version and are upgraded automatically, with a backup; a damaged settings file no longer stops Clearr from starting.
 - Much faster on large libraries: Jellyfin and Sonarr requests run side by side.
 - Backup and restore of settings and the Keep list as one file.
+- FAQ: how to use Sonarr's and Radarr's Recycling Bin as an undo for removals.
 
 ### Keeping
 - Favourites in Jellyfin are kept automatically (Keep favourites, on by default).

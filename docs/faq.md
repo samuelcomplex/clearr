@@ -58,6 +58,19 @@ The app never touches files. Sonarr and Radarr delete them when Clearr asks. The
 
 Not from Clearr. Removed files are gone, just as if you had deleted them in Sonarr/Radarr. The show or movie stays in Sonarr/Radarr (unmonitored), so you can search for it again there. That's why Clearr starts in Dry run and has the per-run limit.
 
+For a real safety net, turn on the **Recycling Bin** in Sonarr and Radarr. Files they delete, including the ones Clearr asks them to delete, are then moved there instead of being erased:
+
+1. In Sonarr, open **Settings → Media Management** and click **Show Advanced** at the top.
+2. Under **File Management**, set **Recycling Bin** to a folder, for example `/tv/.recycle`, and **Recycling Bin Cleanup** to how many days to keep files (for example 14). 0 keeps them until you empty the folder yourself.
+3. Save, and do the same in Radarr (for example `/movies/.recycle`).
+
+To restore something, move its files back from that folder and run **Rescan** on the show or movie in Sonarr/Radarr.
+
+Tips:
+- In Docker, the folder must be inside a path the Sonarr/Radarr container can see. On the same disk as your media, moving files there is instant; on another disk, each removal copies the whole file.
+- Files in the recycling bin still take up space until the cleanup removes them, so a disk-space problem is only solved after that many days.
+- Items the plugin removes **through Jellyfin** (the optional setting for items Sonarr/Radarr don't manage) don't go through Sonarr/Radarr and aren't covered.
+
 ## Can I use both the app and the plugin?
 
 You can install both, but only one should be in Delete mode. Otherwise both act on the same library.

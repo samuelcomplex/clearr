@@ -494,7 +494,7 @@
                 if (!confirm(t('backup.confirm'))) return;
                 file.text().then(function (text) {
                     var data;
-                    try { data = JSON.parse(text); } catch (x) { throw new Error(t('backup.notBackup')); }
+                    try { data = JSON.parse(text); } catch (x) { throw new Error(t('backup.notBackup'), { cause: x }); }
                     return api('backup/restore', 'POST', data);
                 }).then(function () {
                     m.textContent = t('backup.restored'); m.className = 'cl-test-result cl-ok';
