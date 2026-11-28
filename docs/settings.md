@@ -69,6 +69,42 @@ Tick **Ignore** for accounts that shouldn't count, such as a shared living-room 
 | **Language** | Automatic | App only. The language of Clearr's pages: **English** or **Svenska**. *Automatic* follows your browser, falling back to English. The plugin has no setting: it follows each Jellyfin user's own display language (*Settings → Display → Display language*), and uses English for languages Clearr doesn't have yet. Messages passed on from Sonarr, Radarr or Jellyfin (such as a connection error) stay in their own language. |
 | **Debug logging** | Off | App only. Writes every decision to the log files. Turn it on while tracking down a problem. |
 
+## Notifications
+
+Clearr sends a message after a run that removed something, had a failed removal, or stopped with an error. Fill in any of the targets; each one that's set gets the message. **Send test message** checks them without saving.
+
+| Setting | |
+|---|---|
+| **ntfy topic URL** | The full topic URL, such as `https://ntfy.sh/my-clearr` or your own ntfy server. Pick a topic name nobody would guess. |
+| **ntfy access token** | Optional, for protected topics: an access token (`tk_…`) or `user:password`. |
+| **Discord webhook URL** | From a channel's *Edit channel → Integrations → Webhooks → New webhook → Copy webhook URL*. |
+| **Webhook URL** | Anything else (Home Assistant, n8n, a script). Gets a JSON POST with `title`, `text`, `deleted`, `failed`, `bytesFreed`, `error` and an `items` list. |
+| **Also after scheduled dry runs that found something** | Off by default. Handy while you're still in Dry run and want to see what would go. |
+
+Messages use the **Language** setting in the app, and the server's *Preferred display language* (*Dashboard → General*) in the plugin. A target that can't be reached is logged and never stops a run.
+
+### Home Assistant sensor
+
+`/api/summary` (app) or `/Clearr/summary` (plugin) returns a small JSON object: `removedLast30Days`, `freedLast30DaysGb`, `removedTotal`, `freedTotalGb`, `lastRemoved`, `lastRemovedAt`, `failedLast30Days`, `showsMode`, `moviesMode`, `lastRun`, `lastRunAt`, and in the app `nextShowsRun` and `nextMoviesRun`. In `configuration.yaml`:
+
+```yaml
+rest:
+  - resource: http://clearr:8585/api/summary
+    headers:
+      X-Api-Key: !secret clearr_api_key   # Settings → Security → API key
+    scan_interval: 900
+    sensor:
+      - name: Clearr freed last 30 days
+        value_template: "{{ value_json.freedLast30DaysGb }}"
+        unit_of_measurement: GB
+      - name: Clearr removed last 30 days
+        value_template: "{{ value_json.removedLast30Days }}"
+      - name: Clearr last removed
+        value_template: "{{ value_json.lastRemoved }}"
+```
+
+For the plugin, use `http://jellyfin:8096/Clearr/summary` with the header `Authorization: MediaBrowser Token="…"` and an API key from *Dashboard → API Keys*.
+
 ## Backup
 
 **Download backup** saves your settings and the Keep list as one JSON file; **Restore from file…** loads one, in the app or the plugin, from this or an older version of Clearr. The file contains your Sonarr, Radarr and Jellyfin API keys, so keep it somewhere safe. The UI password isn't in it, and restoring keeps the password, the *Also remove items Sonarr/Radarr don't manage* choice and (in the plugin) the Jellyfin connection of the server you restore on.

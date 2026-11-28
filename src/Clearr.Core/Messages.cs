@@ -37,39 +37,57 @@ public sealed record PersonArg(
 
 public static class Messages
 {
-    private static readonly Lazy<Dictionary<string, string>> En = new(() =>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Dictionary<string, string>?> Files = new(StringComparer.OrdinalIgnoreCase);
+
+    private static Dictionary<string, string>? File(string language) => Files.GetOrAdd(language, l =>
     {
-        using var s = ClearrUi.Open("lang-en.json") ?? throw new InvalidOperationException("lang-en.json missing");
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(s) ?? new();
+        using var s = ClearrUi.Open("lang-" + l + ".json");
+        return s == null ? null : JsonSerializer.Deserialize<Dictionary<string, string>>(s);
     });
 
+    private static Dictionary<string, string> En => File("en") ?? throw new InvalidOperationException("lang-en.json missing");
+
     /// <summary>The English text for a message (same templates the UI uses).</summary>
-    public static string English(Msg m) => Render(m.Code, m.Args);
+    public static string English(Msg m) => Render(m, "en");
 
     public static string English(IEnumerable<Msg> parts) => string.Join(" · ", parts.Select(English));
 
-    private static string Render(string code, Dictionary<string, object?> args)
+    /// <summary>The text for a message in a language ("sv", "en-GB" …), English where that language has no translation.</summary>
+    public static string Render(Msg m, string? language) => Render(m.Code, m.Args, Pick(language));
+
+    public static string Render(IEnumerable<Msg> parts, string? language) => string.Join(" · ", parts.Select(p => Render(p, language)));
+
+    /// <summary>Looks up a key directly, with named values.</summary>
+    public static string Text(string code, string? language, Dictionary<string, object?>? args = null) => Render(code, args ?? new(), Pick(language));
+
+    private static string Pick(string? language)
     {
-        var template = En.Value.TryGetValue(code, out var t) ? t : code;
+        var l = (language ?? "").Trim().Split('-', '_')[0].ToLowerInvariant();
+        return l.Length is > 0 and < 9 && l.All(char.IsAsciiLetterLower) && File(l) != null ? l : "en";
+    }
+
+    private static string Render(string code, Dictionary<string, object?> args, string lang)
+    {
+        var template = (File(lang)?.TryGetValue(code, out var t) == true ? t : null) ?? (En.TryGetValue(code, out var e) ? e : code);
         foreach (var (key, value) in args)
         {
-            template = template.Replace("{" + key + "}", Value(value), StringComparison.Ordinal);
+            template = template.Replace("{" + key + "}", Value(value, lang), StringComparison.Ordinal);
         }
 
         return template;
     }
 
-    private static string Value(object? v) => v switch
+    private static string Value(object? v, string lang) => v switch
     {
         null => "",
-        Msg m => English(m),
+        Msg m => Render(m.Code, m.Args, lang),
         IEnumerable<PersonArg> people => string.Join(", ", people.Select(p => Render("reason.person", new()
         {
             ["name"] = p.Name,
             ["watched"] = p.Watched,
             ["total"] = p.Total,
-            ["flags"] = p.Flags.Count == 0 ? "" : ", " + string.Join(", ", p.Flags.Select(f => Render("flagInline." + f, new()))),
-        }))),
+            ["flags"] = p.Flags.Count == 0 ? "" : ", " + string.Join(", ", p.Flags.Select(f => Render("flagInline." + f, new(), lang))),
+        }, lang))),
         IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
         _ => v.ToString() ?? "",
     };

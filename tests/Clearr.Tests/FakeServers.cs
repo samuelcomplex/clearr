@@ -43,6 +43,9 @@ public class FakeWorld
 
     public int Requests;
 
+    /// <summary>Notifications received: (path, headers, body).</summary>
+    public List<(string Path, Dictionary<string, string> Headers, string Body)> Notifications { get; } = new();
+
     public void Record(string line)
     {
         Log.Add(line);
@@ -68,6 +71,21 @@ public static class FakeServers
 
             await next();
         });
+
+        // ---------------- notification targets ----------------
+        foreach (var path in new[] { "/ntfy/clearr", "/discord", "/hook", "/hook-fail" })
+        {
+            app.MapPost(path, async (HttpContext c) =>
+            {
+                var body = await new StreamReader(c.Request.Body).ReadToEndAsync();
+                lock (w.Notifications)
+                {
+                    w.Notifications.Add((path, c.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase), body));
+                }
+
+                return path == "/hook-fail" ? Results.StatusCode(500) : Results.Ok();
+            });
+        }
 
         // ---------------- Jellyfin (PascalCase JSON, like the real thing) ----------------
         var pascal = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = null };

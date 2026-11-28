@@ -321,6 +321,31 @@ api.MapPost("/restart", (IHostApplicationLifetime life) =>
 
 api.MapGet("/history", (ClearrEngine svc) => Results.Ok(svc.History()));
 
+api.MapGet("/summary", (ClearrEngine svc, SettingsStore st, Scheduler sch) =>
+{
+    var s = st.Get();
+    var o = ClearrSummary.Build(svc.History(), s, DateTime.UtcNow);
+    o["lastRunAt"] = sch.LastRunAt;
+    o["lastRun"] = sch.LastRunSummary is Msg m ? Messages.Render(m, s.Language) : null;
+    o["nextShowsRun"] = sch.NextRun(s, CleanupScope.Shows);
+    o["nextMoviesRun"] = sch.NextRun(s, CleanupScope.Movies);
+    o["version"] = version;
+    return Results.Text(o.ToJsonString(), "application/json");
+});
+
+api.MapPost("/notifications/test", async (HttpContext ctx, ClearrEngine svc, SettingsStore st) =>
+{
+    var body = await JsonNode.ParseAsync(ctx.Request.Body);
+    var n = body?.Deserialize<NotificationSettings>(Json.Options) ?? st.Get().Notifications;
+    if (!n.AnyTarget)
+    {
+        return Results.BadRequest(new { error = "No notification target is set." });
+    }
+
+    var results = await svc.TestNotificationsAsync(n, ctx.RequestAborted);
+    return Results.Ok(new { results = results.Select(r => new { target = r.Target, error = r.Error }) });
+});
+
 api.MapGet("/backup", (SettingsStore st, KeepStore keep) =>
     Results.Text(Backup.Create(st, keep, version).ToJsonString(Json.Options), "application/json"));
 

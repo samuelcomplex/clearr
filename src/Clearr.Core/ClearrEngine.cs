@@ -203,6 +203,47 @@ public sealed class ClearrEngine : IDisposable
     /// </summary>
     public async Task<CleanupResult> CleanupAsync(bool dryRun, bool record, CancellationToken ct, CleanupScope scope = CleanupScope.All)
     {
+        CleanupResult result;
+        try
+        {
+            result = await RunCleanupAsync(dryRun, record, scope, ct);
+        }
+        catch (Exception ex) when (record && ex is not OperationCanceledException)
+        {
+            await NotifyAsync(Notifier.ForCrash(ex, scope, NotifyLanguage()));
+            throw;
+        }
+
+        if (record && Notifier.ForRun(result, scope, _settings().Notifications, NotifyLanguage()) is Notification notice)
+        {
+            await NotifyAsync(notice);
+        }
+
+        return result;
+    }
+
+    /// <summary>Language for notifications: the Language setting, else the host's (the plugin passes Jellyfin's).</summary>
+    public Func<string?> HostLanguage { get; set; } = () => null;
+
+    private string? NotifyLanguage() => _settings().Language is { Length: > 0 } l ? l : HostLanguage();
+
+    private async Task NotifyAsync(Notification notice)
+    {
+        var n = _settings().Notifications;
+        if (!n.AnyTarget)
+        {
+            return;
+        }
+
+        await Notifier.SendAsync(_http.CreateClient("clearr"), n, notice, _log, CancellationToken.None);
+    }
+
+    /// <summary>Sends a test message to the configured targets.</summary>
+    public Task<List<(string Target, string? Error)>> TestNotificationsAsync(NotificationSettings n, CancellationToken ct) =>
+        Notifier.SendAsync(_http.CreateClient("clearr"), n, Notifier.Test(NotifyLanguage()), _log, ct);
+
+    private async Task<CleanupResult> RunCleanupAsync(bool dryRun, bool record, CleanupScope scope, CancellationToken ct)
+    {
         await _gate.WaitAsync(ct);
         try
         {

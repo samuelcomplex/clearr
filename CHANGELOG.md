@@ -38,6 +38,10 @@ The first public release.
 - Backup and restore of settings and the Keep list as one file.
 - FAQ: how to use Sonarr's and Radarr's Recycling Bin as an undo for removals.
 
+### Notifications
+- A message after each run that removed something or ran into trouble, to ntfy, Discord and/or any JSON webhook, with a test button. Optional messages after dry runs.
+- `/api/summary` for a Home Assistant REST sensor: removals and space freed in the last 30 days, totals, modes and next runs.
+
 ### Keeping
 - Favourites in Jellyfin are kept automatically (Keep favourites, on by default).
 

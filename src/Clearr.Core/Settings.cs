@@ -34,6 +34,25 @@ public class ConnectionSettings
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
 }
 
+public class NotificationSettings
+{
+    /// <summary>Full ntfy topic URL, e.g. https://ntfy.sh/my-clearr.</summary>
+    public string NtfyUrl { get; set; } = "";
+
+    /// <summary>ntfy access token, or user:password. Optional.</summary>
+    public string NtfyToken { get; set; } = "";
+
+    public string DiscordWebhookUrl { get; set; } = "";
+
+    /// <summary>Any URL; gets a JSON POST.</summary>
+    public string WebhookUrl { get; set; } = "";
+
+    /// <summary>Also send a message after scheduled dry runs that found something.</summary>
+    public bool IncludeDryRuns { get; set; }
+
+    public bool AnyTarget => !string.IsNullOrWhiteSpace(NtfyUrl) || !string.IsNullOrWhiteSpace(DiscordWebhookUrl) || !string.IsNullOrWhiteSpace(WebhookUrl);
+}
+
 public class HttpsSettings
 {
     public bool Enabled { get; set; }
@@ -108,6 +127,9 @@ public class ClearrSettings
 
     // ---- Users ----
     public List<string> ExcludedUserIds { get; set; } = new();
+
+    // ---- Notifications ----
+    public NotificationSettings Notifications { get; set; } = new();
 
     // ---- HTTPS ----
     public HttpsSettings Https { get; set; } = new();

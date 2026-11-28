@@ -167,6 +167,15 @@
 
             '<h2>' + e('settings.users') + '</h2><p class="cl-hint">' + e('settings.usersHint') + '</p><div data-el="users" class="cl-users"></div>' +
 
+            '<h2>' + e('notify.heading') + '</h2><p class="cl-hint">' + e('notify.hint') + '</p>' +
+            '<label>' + e('notify.ntfyUrl') + '<input name="notifications.ntfyUrl" placeholder="https://ntfy.sh/my-clearr"></label>' +
+            '<label>' + e('notify.ntfyToken') + '<input name="notifications.ntfyToken" type="password" autocomplete="off"><span class="cl-hint">' + e('notify.ntfyTokenHint') + '</span></label>' +
+            '<label>' + e('notify.discord') + '<input name="notifications.discordWebhookUrl" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/…"></label>' +
+            '<label>' + e('notify.webhook') + '<input name="notifications.webhookUrl" placeholder="https://…"><span class="cl-hint">' + e('notify.webhookHint') + '</span></label>' +
+            check('notifications.includeDryRuns', 'notify.includeDryRuns') +
+            '<button type="button" class="cl-btn cl-small" data-el="testNotify">' + e('notify.test') + '</button><span data-el="notifyResult" class="cl-test-result"></span>' +
+            '<p class="cl-hint">' + e('notify.summaryHint', { path: host === 'app' ? '/api/summary' : '/Clearr/summary' }) + '</p>' +
+
             // The plugin follows the Jellyfin user's display language, so only the app has a Language setting.
             (app ? '<h2>' + e('settings.general') + '</h2>' +
                 '<label>' + e('settings.language') + '<select name="language"><option value="">' + e('settings.languageAuto') + '</option>' +
@@ -474,6 +483,18 @@
                     });
                 });
             }
+
+            el('testNotify').addEventListener('click', function () {
+                var out = el('notifyResult');
+                out.textContent = t('settings.testing'); out.className = 'cl-test-result';
+                var n = {};
+                all('[name^="notifications."]').forEach(function (f) { n[f.name.slice(14)] = f.type === 'checkbox' ? f.checked : f.value.trim(); });
+                api('notifications/test', 'POST', n).then(function (r) {
+                    var bad = r.results.filter(function (x) { return x.error; });
+                    out.textContent = r.results.map(function (x) { return x.target + ': ' + (x.error ? x.error : t('notify.sent')); }).join(' · ');
+                    out.className = 'cl-test-result ' + (bad.length ? 'cl-error' : 'cl-ok');
+                }).catch(function (err) { out.textContent = err.body && err.body.error === 'No notification target is set.' ? t('notify.noTarget') : err.message; out.className = 'cl-test-result cl-error'; });
+            });
 
             el('exportBackup').addEventListener('click', function () {
                 api('backup').then(function (data) {

@@ -212,6 +212,7 @@ Expect(w.EpisodeFiles.Any(f => f.SeriesId == 5) && w.EpisodeFiles.Any(f => f.Ser
 
 st = settings.Get();
 st.MaxDeleteGbPerRun = 0;
+st.Notifications = new NotificationSettings { NtfyUrl = url + "/ntfy/clearr", NtfyToken = "tk_123", DiscordWebhookUrl = url + "/discord", WebhookUrl = url + "/hook-fail" };
 settings.Save(st);
 var run2 = await svc.CleanupAsync(false, true, default);
 Console.WriteLine("  run 2 (no limit):\n    " + string.Join("\n    ", run2.Actions.Select(Line)));
@@ -223,6 +224,29 @@ Expect(w.RadarrMovies[2]["movieFile"] != null && w.RadarrMovies[4]["movieFile"] 
 var log = string.Join(",", w.Log);
 Expect(w.Log.IndexOf("PUT movie 1") < w.Log.IndexOf("DELETE moviefile 1001"), "Run 2: unmonitor happens before delete");
 Expect(history.GetAll().Count(h => h.Action == "Deleted") == 3, "History: 3 deletions recorded");
+
+// ---------------------------------------------------------------- notifications and summary
+var ntfy = w.Notifications.Single(n => n.Path == "/ntfy/clearr");
+Expect(ntfy.Headers["Authorization"] == "Bearer tk_123" && ntfy.Headers["Title"].StartsWith("=?UTF-8?B?") && ntfy.Body.Contains("Running Show") && ntfy.Body.Contains("Finished Movie"), "ntfy: one message after the run, with token, title and the removed items");
+var discord = JsonNode.Parse(w.Notifications.Single(n => n.Path == "/discord").Body)!;
+Expect(discord["content"]!.GetValue<string>().StartsWith("**Clearr removed 2 items") && discord["allowed_mentions"]!["parse"]!.AsArray().Count == 0, "Discord: title and list, no @mentions");
+var hook = JsonNode.Parse(w.Notifications.Single(n => n.Path == "/hook-fail").Body)!;
+Expect(hook["deleted"]!.GetValue<int>() == 2 && hook["items"]!.AsArray().Count >= 2 && hook["bytesFreed"]!.GetValue<long>() > 0, "Webhook: JSON with counts, sizes and items");
+Expect(run2.Error == null && run2.Actions.Count(a => a.Action == "Deleted") == 2, "A failing notification target doesn't affect the run");
+var before = w.Notifications.Count;
+await svc.CleanupAsync(false, true, default);
+Expect(w.Notifications.Count == before, "Nothing removed: no notification");
+st = settings.Get();
+st.Language = "sv";
+settings.Save(st);
+var notifyTest = await svc.TestNotificationsAsync(settings.Get().Notifications, default);
+Expect(notifyTest.Single(r => r.Target == "ntfy").Error == null && notifyTest.Single(r => r.Target == "webhook").Error!.Contains("500") && JsonNode.Parse(w.Notifications.Last(n => n.Path == "/discord").Body)!["content"]!.GetValue<string>().Contains("Aviseringar från Clearr"), "Test message reports each target and follows the Language setting");
+st.Language = "";
+st.Notifications = new();
+settings.Save(st);
+Expect(Messages.Text("notify.more", "de-DE", new() { ["count"] = 2 }) == "…and 2 more" && Messages.Text("notify.more", "sv-SE", new() { ["count"] = 2 }) == "…och 2 till", "Server-side text: Swedish, English for other languages");
+var sum = ClearrSummary.Build(history.GetAll(), settings.Get(), DateTime.UtcNow);
+Expect(sum["removedTotal"]!.GetValue<int>() == 3 && sum["removedLast30Days"]!.GetValue<int>() == 3 && sum["freedTotalGb"]!.GetValue<double>() > 0 && sum["showsMode"]!.GetValue<string>() == "Delete", "Summary for Home Assistant: removals, space freed, modes");
 
 // ---------------------------------------------------------------- plugin fallback: delete through Jellyfin
 var fakeDeleter = new FakeDeleter();
