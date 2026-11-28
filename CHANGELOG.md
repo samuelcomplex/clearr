@@ -38,6 +38,9 @@ The first public release.
 - Backup and restore of settings and the Keep list as one file.
 - FAQ: how to use Sonarr's and Radarr's Recycling Bin as an undo for removals.
 
+### Seerr
+- Optional Jellyseerr/Overseerr connection: removed shows and movies are removed there too, so they can be requested again.
+
 ### Statistics
 - The History page starts with statistics: space freed and items removed per month for the last year, and the shows and movies viewers drop most often.
 

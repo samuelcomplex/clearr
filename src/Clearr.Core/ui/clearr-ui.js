@@ -138,6 +138,7 @@
             (app ? conn('jellyfin', 'Jellyfin', 'settings.required', 'http://192.168.1.6:8096', 'settings.jellyfinKeyHint') : '') +
             conn('sonarr', 'Sonarr', 'settings.forShows', 'http://192.168.1.6:8989', 'settings.arrKeyHint') +
             conn('radarr', 'Radarr', 'settings.forMovies', 'http://192.168.1.6:7878', 'settings.arrKeyHint') +
+            conn('seerr', 'Seerr', 'settings.seerrNote', 'http://192.168.1.6:5055', 'settings.seerrKeyHint') +
             '<p class="cl-hint">' + e('settings.arrHint') + '</p>' +
             (app ? '' : check('allowDirectDelete', 'settings.allowDirectDelete') + '<p class="cl-hint">' + e('settings.allowDirectDeleteHint') + '</p>') +
 

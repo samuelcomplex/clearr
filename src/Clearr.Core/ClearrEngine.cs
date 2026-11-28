@@ -201,7 +201,13 @@ public sealed class ClearrEngine : IDisposable
         public DateTime? FinishedAt { get; init; }
 
         public string? Root => Movie?.Item.RootFolder ?? Show?.ArrRootFolder;
+
+        /// <summary>TMDB id, for removing it in Seerr.</summary>
+        public int? Tmdb { get; init; }
     }
+
+    private static int? TmdbOf(Dictionary<string, string> ids) =>
+        ids.TryGetValue("Tmdb", out var t) && int.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
 
     private static DateTime? LastFinished(IEnumerable<UserProgress> users) =>
         users.Where(u => u.FinishedAt.HasValue).Select(u => u.FinishedAt).DefaultIfEmpty(null).Max();
@@ -299,6 +305,24 @@ public sealed class ClearrEngine : IDisposable
         return (await sonarr, await radarr);
     }
 
+    private async Task<Msg> RemoveInSeerrAsync(SeerrClient seerr, Work w, CancellationToken ct)
+    {
+        if (w.Tmdb is not int tmdb)
+        {
+            return new Msg("outcome.seerrNoId");
+        }
+
+        try
+        {
+            return await seerr.RemoveAsync(w.Kind == "Movie" ? "movie" : "tv", tmdb, ct) ? new Msg("outcome.seerrRemoved") : new Msg("outcome.seerrNotFound");
+        }
+        catch (ApiException ex)
+        {
+            _log.LogWarning("Seerr: couldn't remove {Title}: {Message}", w.Title, ex.Message);
+            return new Msg("outcome.seerrFailed", new() { ["error"] = ex.Message });
+        }
+    }
+
     /// <summary>Sends a test message to the configured targets.</summary>
     public Task<List<(string Target, string? Error)>> TestNotificationsAsync(NotificationSettings n, CancellationToken ct) =>
         Notifier.SendAsync(_http.CreateClient("clearr"), n, Notifier.Test(NotifyLanguage()), _log, ct);
@@ -326,6 +350,7 @@ public sealed class ClearrEngine : IDisposable
             var result = new CleanupResult { DryRun = dryRun };
             var work = new List<Work>();
             var showsById = lib.Shows.ToDictionary(x => x.Id);
+            var moviesById = lib.Movies.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             var radarrById = radarrIndex.Values.GroupBy(v => v.Item.Id).ToDictionary(g => g.Key, g => g.First());
 
             foreach (var sr in InScope(CleanupScope.Shows) ? report.Shows : new List<ShowReport>())
@@ -339,7 +364,7 @@ public sealed class ClearrEngine : IDisposable
 
                 if (s.DeleteShows && sr.Eligible)
                 {
-                    work.Add(new Work("Show", sr.Name, null, null, sr.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Show", sr.ShowId, null, null)) { FinishedAt = LastFinished(sr.Users) });
+                    work.Add(new Work("Show", sr.Name, null, null, sr.ReasonMsg!, viaSonarr ? sr.ArrId : null, show, null, viaSonarr ? null : new DirectTarget("Show", sr.ShowId, null, null)) { FinishedAt = LastFinished(sr.Users), Tmdb = TmdbOf(show.ProviderIds) });
                 }
                 else if (s.DeleteSeasons)
                 {
@@ -356,11 +381,11 @@ public sealed class ClearrEngine : IDisposable
                     if (mr.Via == "Radarr")
                     {
                         var rm = mr.ArrId is int rid ? radarrById.GetValueOrDefault(rid) : null;
-                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, mr.ArrId, null, rm, null) { FinishedAt = LastFinished(mr.Users) });
+                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, mr.ArrId, null, rm, null) { FinishedAt = LastFinished(mr.Users), Tmdb = moviesById.TryGetValue(mr.MovieId, out var mi) ? TmdbOf(mi.ProviderIds) : null });
                     }
                     else
                     {
-                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, null, null, null, new DirectTarget("Movie", mr.MovieId, null, null)) { FinishedAt = LastFinished(mr.Users) });
+                        work.Add(new Work("Movie", title, null, null, mr.ReasonMsg!, null, null, null, new DirectTarget("Movie", mr.MovieId, null, null)) { FinishedAt = LastFinished(mr.Users), Tmdb = moviesById.TryGetValue(mr.MovieId, out var mi) ? TmdbOf(mi.ProviderIds) : null });
                     }
                 }
             }
@@ -420,6 +445,7 @@ public sealed class ClearrEngine : IDisposable
                 }
             }
 
+            var seerr = s.Seerr.IsConfigured && !dryRun ? new SeerrClient(Http(), s.Seerr) : null;
             long planned = 0;
             var deletedAny = false;
             var stopped = new Dictionary<CleanupScope, Msg>();
@@ -574,6 +600,10 @@ public sealed class ClearrEngine : IDisposable
                     entry.Action = "Deleted";
                     result.TotalBytes += entry.Bytes;
                     deletedAny = true;
+                    if (seerr != null && w.SeasonNumber is null && w.Kind is "Show" or "Movie")
+                    {
+                        entry.Parts.Add(await RemoveInSeerrAsync(seerr, w, ct));
+                    }
                     _log.LogInformation("Clearr deleted {Kind} {Title} {Season} ({Bytes} bytes)", w.Kind, w.Title, w.SeasonName, entry.Bytes);
                 }
                 catch (Exception ex) when (ex is ApiException or ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException)

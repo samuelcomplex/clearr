@@ -78,13 +78,13 @@ public class HttpApi
             var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (resp.StatusCode == HttpStatusCode.Unauthorized)
             {
-                throw new ApiException($"{_name} rejected the API key (401)");
+                throw new ApiException($"{_name} rejected the API key (401)", 401);
             }
 
             if (!resp.IsSuccessStatusCode)
             {
                 var snippet = text.Length > 300 ? text[..300] : text;
-                throw new ApiException($"{_name}: HTTP {(int)resp.StatusCode} on {method} {path}: {snippet}");
+                throw new ApiException($"{_name}: HTTP {(int)resp.StatusCode} on {method} {path}: {snippet}", (int)resp.StatusCode);
             }
 
             return string.IsNullOrWhiteSpace(text) ? null : JsonNode.Parse(text);
@@ -94,10 +94,14 @@ public class HttpApi
 
 public class ApiException : Exception
 {
-    public ApiException(string message)
+    public ApiException(string message, int? status = null)
         : base(message)
     {
+        Status = status;
     }
+
+    /// <summary>The HTTP status, when the server answered with an error.</summary>
+    public int? Status { get; }
 }
 
 internal static class JsonExt

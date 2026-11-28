@@ -224,6 +224,35 @@ internal static class SafetyTests
         Expect(noDisks.Actions.All(a => a.Action == "Skipped") && noDisks.Actions.Any(a => a.Parts.Any(p => p.Code == "outcome.driveUnknown")), "Free-space target: when the drive's space is unknown, nothing is removed");
         await envd.StopAsync();
 
+        // Seerr: whole shows and movies are removed there too; seasons aren't; a Seerr problem doesn't undo anything.
+        var bs = new WorldBuilder(seed: 9);
+        bs.User("u1", "Anna");
+        var sShow = bs.Show("Requested Show", "Ended", new[] { 1 }, inSonarr: true, gbPerFile: 1);
+        var sSeasons = bs.Show("Continuing Request", "Continuing", new[] { 1, 1 }, inSonarr: true, gbPerFile: 1);
+        var sMovie = bs.Movie("Requested Movie", inRadarr: true, gb: 1);
+        var sOther = bs.Movie("Not Requested", inRadarr: true, gb: 1);
+        bs.WatchAll("u1", sShow, 30);
+        bs.Watch("u1", sSeasons.Episodes.Where(x => x.Season == 1), 30);
+        bs.WatchMovie("u1", sMovie, true, 30);
+        bs.WatchMovie("u1", sOther, true, 30);
+        var showTmdb = bs.World.Shows.Single(x => x.Id == sShow.Id).Tvdb + 70000;
+        var contTmdb = bs.World.Shows.Single(x => x.Id == sSeasons.Id).Tvdb + 70000;
+        bs.World.SeerrMedia[("tv", showTmdb)] = 11;
+        bs.World.SeerrMedia[("tv", contTmdb)] = 12;
+        bs.World.SeerrMedia[("movie", bs.World.Movies.Single(x => x.Id == sMovie.Id).Tmdb)] = 13;
+        var envs = await Env.StartAsync(bs.World, new ClearrSettings { ShowsMode = CleanupMode.Delete, MoviesMode = CleanupMode.Delete });
+        var withSeerr = envs.Settings.Get();
+        withSeerr.Seerr = new ConnectionSettings { Url = envs.Url + "/seerr", ApiKey = "seerr-key" };
+        envs.Settings.Save(withSeerr);
+        var seerrRun = await envs.Engine.CleanupAsync(false, true, default);
+        Expect(bs.World.SeerrDeleted.OrderBy(x => x).SequenceEqual(new[] { 11, 13 }), "Seerr: the removed show and movie are removed there too; a show with only a season removed isn't");
+        Expect(seerrRun.Actions.Single(a => a.Title == "Requested Show").Parts.Any(p => p.Code == "outcome.seerrRemoved") && seerrRun.Actions.Single(a => a.Title.StartsWith("Not Requested")).Parts.Any(p => p.Code == "outcome.seerrNotFound"), "Seerr: History says what happened there");
+        var badKey = envs.Settings.Get();
+        badKey.Seerr.ApiKey = "wrong";
+        envs.Settings.Save(badKey);
+        Expect((await new Clearr.Clients.SeerrClient(new HttpClient(), badKey.Seerr).TestAsync(default).ContinueWith(t => t.IsFaulted)), "Seerr: Test fails with a wrong API key");
+        await envs.StopAsync();
+
         // Grace period, someone still watching, someone who never started.
         var b4 = new WorldBuilder(seed: 4);
         b4.User("u1", "Anna");
@@ -540,11 +569,14 @@ internal static class SafetyTests
 
         public FakeDeleter Deleter { get; } = new();
 
+        public string Url { get; private set; } = "";
+
         public static async Task<Env> StartAsync(FakeWorld w, ClearrSettings s)
         {
             var e = new Env { World = w };
             var (app, url) = await FakeServers.StartAsync(w);
             e._app = app;
+            e.Url = url;
             e._tmp = Path.Combine(Path.GetTempPath(), "clearr-safety-" + Guid.NewGuid().ToString("N")[..8]);
             var paths = new ConfigPaths(e._tmp);
             e.Settings = new SettingsStore(paths);

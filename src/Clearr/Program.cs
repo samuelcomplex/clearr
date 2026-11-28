@@ -244,6 +244,7 @@ api.MapPost("/test/{service}", async (string service, ConnectionSettings c, IHtt
             "jellyfin" => await new JellyfinClient(http, c).TestAsync(ct),
             "sonarr" => await new SonarrClient(http, c).TestAsync(ct),
             "radarr" => await new RadarrClient(http, c).TestAsync(ct),
+            "seerr" => await new SeerrClient(http, c).TestAsync(ct),
             _ => throw new ArgumentException("Unknown service " + service),
         };
         return Results.Ok(new { ok = true, message = msg });

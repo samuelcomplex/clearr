@@ -267,5 +267,11 @@
   "stats.removed": "Removed",
   "stats.dropped": "Dropped most often",
   "stats.droppedBy": "{count} viewers dropped off",
-  "stats.droppedNone": "Nobody has dropped off anything."
+  "stats.droppedNone": "Nobody has dropped off anything.",
+  "settings.seerrNote": "optional: Jellyseerr or Overseerr; removed shows and movies are removed there too, so they can be requested again",
+  "settings.seerrKeyHint": "Settings → General → API Key",
+  "outcome.seerrRemoved": "removed in Seerr",
+  "outcome.seerrNotFound": "not in Seerr",
+  "outcome.seerrNoId": "no TMDB id, so not removed in Seerr",
+  "outcome.seerrFailed": "couldn't remove it in Seerr: {error}"
 }

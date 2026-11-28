@@ -267,5 +267,11 @@
   "stats.removed": "Borttaget",
   "stats.dropped": "Oftast avbrutet",
   "stats.droppedBy": "{count} tittare slutade",
-  "stats.droppedNone": "Ingen har slutat titta på något."
+  "stats.droppedNone": "Ingen har slutat titta på något.",
+  "settings.seerrNote": "valfritt: Jellyseerr eller Overseerr; borttagna serier och filmer tas bort där också, så att de kan önskas igen",
+  "settings.seerrKeyHint": "Settings → General → API Key",
+  "outcome.seerrRemoved": "borttagen i Seerr",
+  "outcome.seerrNotFound": "finns inte i Seerr",
+  "outcome.seerrNoId": "inget TMDB-id, så inte borttagen i Seerr",
+  "outcome.seerrFailed": "kunde inte ta bort den i Seerr: {error}"
 }

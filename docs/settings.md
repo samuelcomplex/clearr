@@ -9,6 +9,7 @@ Everything is set in the web UI (**Settings**). This page explains each setting 
 | **Jellyfin** URL and API key | App only (the plugin is inside Jellyfin already). Create the key in *Jellyfin Dashboard → API Keys → +*. |
 | **Sonarr** URL and API key | For shows. The key is in *Sonarr → Settings → General*. |
 | **Radarr** URL and API key | For movies. The key is in *Radarr → Settings → General*. |
+| **Seerr** URL and API key | Optional, for Jellyseerr or Overseerr. When Clearr removes a whole show or a movie, it's removed in Seerr too, so it shows as not available and can be requested again. Removing single seasons leaves Seerr alone. The key is in *Seerr → Settings → General → API Key*. A Seerr problem is noted in History and never undoes a removal. |
 | **Also remove items Sonarr/Radarr don't manage, through Jellyfin** | Plugin only. **Off** by default. When on, finished items that Sonarr/Radarr don't know about are deleted from disk by Jellyfin itself. Nothing is unmonitored anywhere, so if another tool manages them they may come back. |
 
 URLs can be written with or without `http://` and with or without a trailing slash. **Test** checks the values in the form before you save.

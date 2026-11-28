@@ -43,6 +43,11 @@ public class FakeWorld
 
     public int Requests;
 
+    /// <summary>Seerr's media: ("movie"|"tv", TMDB id) → media id. Shows' TMDB id is their TVDB id + 70000.</summary>
+    public Dictionary<(string Kind, int Tmdb), int> SeerrMedia { get; } = new();
+
+    public List<int> SeerrDeleted { get; } = new();
+
     /// <summary>Drives reported by /api/v3/diskspace (both Sonarr and Radarr).</summary>
     public List<(string Path, long Free)> Disks { get; } = new() { ("/", 500L * 1073741824) };
 
@@ -73,6 +78,30 @@ public static class FakeServers
             }
 
             await next();
+        });
+
+        // ---------------- Seerr ----------------
+        bool SeerrAuth(HttpContext c) => c.Request.Headers["X-Api-Key"] == "seerr-key";
+        app.MapGet("/seerr/api/v1/settings/main", (HttpContext c) => SeerrAuth(c) ? Results.Ok(new { }) : Results.StatusCode(403));
+        app.MapGet("/seerr/api/v1/status", () => Results.Ok(new { version = "2.7.0" }));
+        foreach (var kind in new[] { "movie", "tv" })
+        {
+            app.MapGet($"/seerr/api/v1/{kind}/{{tmdb:int}}", (HttpContext c, int tmdb) =>
+                !SeerrAuth(c) ? Results.StatusCode(403)
+                : w.SeerrMedia.TryGetValue((kind, tmdb), out var id) ? Results.Ok(new { id = tmdb, mediaInfo = new { id, status = 5 } })
+                : Results.Ok(new { id = tmdb }));
+        }
+
+        app.MapDelete("/seerr/api/v1/media/{id:int}", (HttpContext c, int id) =>
+        {
+            if (!SeerrAuth(c))
+            {
+                return Results.StatusCode(403);
+            }
+
+            w.SeerrDeleted.Add(id);
+            w.SeerrMedia.Remove(w.SeerrMedia.First(x => x.Value == id).Key);
+            return Results.NoContent();
         });
 
         // ---------------- notification targets ----------------
@@ -117,7 +146,7 @@ public static class FakeServers
 
             if (types.Contains("Series"))
             {
-                items.AddRange(w.Shows.Where(s => Keep(s.Id)).Select(s => (object)new { Id = s.Id, Name = s.Name, Status = s.Status, Tags = s.Tags, ProviderIds = new Dictionary<string, string> { ["Tvdb"] = s.Tvdb.ToString() } }));
+                items.AddRange(w.Shows.Where(s => Keep(s.Id)).Select(s => (object)new { Id = s.Id, Name = s.Name, Status = s.Status, Tags = s.Tags, ProviderIds = new Dictionary<string, string> { ["Tvdb"] = s.Tvdb.ToString(), ["Tmdb"] = (s.Tvdb + 70000).ToString() } }));
             }
 
             if (types.Contains("Season"))

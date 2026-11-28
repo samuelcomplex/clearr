@@ -134,6 +134,9 @@ public class ClearrSettings
     // ---- Root folders left out of cleanup (Sonarr/Radarr paths) ----
     public List<string> ExcludedRootFolders { get; set; } = new();
 
+    // ---- Seerr (optional): removed shows and movies are removed there too ----
+    public ConnectionSettings Seerr { get; set; } = new();
+
     // ---- Notifications ----
     public NotificationSettings Notifications { get; set; } = new();
 
